@@ -6,16 +6,41 @@ import { processMessage } from '../ai/ai.pipeline';
 export class ChatService {
   constructor(private prisma: PrismaService) {}
 
-  async chat(message: string) {
-    // 1️⃣ Lấy sản phẩm từ DB
+  // 👉 Webhook entry point
+  async handleWebhook(payload: any) {
+    try {
+      const entry = payload.entry?.[0];
+      const messaging = entry?.messaging?.[0];
+      if (!messaging) return { ok: true };
+
+      const senderId = messaging.sender?.id;
+      const messageText = messaging.message?.text;
+
+      if (!senderId || !messageText) return { ok: true };
+
+      const reply = await this.chat(messageText);
+
+      console.log('Reply to FB:', reply);
+
+      // ⏭️ bước sau: gửi reply về Facebook
+      return { ok: true };
+    } catch (err) {
+      console.error('handleWebhook error:', err);
+      return { ok: false };
+    }
+  }
+
+  // 👉 Core chat logic (Gemini pipeline)
+  async chat(message: string): Promise<string> {
+    // 1️⃣ Lấy sản phẩm
     const products = await this.prisma.product.findMany();
 
-    // 2️⃣ KHAI BÁO BIẾN THẬT (QUAN TRỌNG)
+    // 2️⃣ Context
     const userName = 'Khách';
     const history: string[] = [];
     const hasPhone = false;
 
-    // 3️⃣ Tạo knowledgeBase từ sản phẩm
+    // 3️⃣ Knowledge base
     const knowledgeBase = `
 Bạn là chatbot bán hàng.
 LUẬT THÉP:
@@ -37,8 +62,8 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
   .join('\n')}
 `;
 
-    // 4️⃣ Gọi AI PIPELINE
-    const reply = await processMessage({
+    // 4️⃣ Gọi AI
+    const aiReply = await processMessage({
       userName,
       message,
       history,
@@ -46,6 +71,9 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
       hasPhone,
     });
 
-    return reply;
+    // ⚠️ ÉP KIỂU AN TOÀN
+    return typeof aiReply === 'string'
+      ? aiReply
+      : aiReply?.text || 'Shop sẽ phản hồi ngay cho bạn nhé!';
   }
 }

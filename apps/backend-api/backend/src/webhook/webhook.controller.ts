@@ -35,7 +35,6 @@ export class WebhookController {
     const hasPhone = false;
 
     const reply = await processMessage({
-      userId: senderId,
       userName,
       message,
       history,
