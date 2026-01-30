@@ -24,7 +24,6 @@ export class ChatService {
 
       if (!senderId || !messageText) return { ok: true };
 
-      // 👉 gọi core chat
       const reply = await this.chat(messageText);
 
       // 👉 gửi reply về Facebook
@@ -44,19 +43,36 @@ export class ChatService {
     // 1️⃣ Lấy sản phẩm
     const products = await this.prisma.product.findMany();
 
-    // 2️⃣ Context
+    // 2️⃣ Nhận diện số điện thoại
+    const phone = this.extractPhone(message);
+    const hasPhone = Boolean(phone);
+
+    // 3️⃣ Lưu DB nếu có SĐT
+    if (phone) {
+      await this.prisma.conversation.upsert({
+        where: { phone },
+        update: { lastMessage: message },
+        create: {
+          phone,
+          lastMessage: message,
+        },
+      });
+    }
+
     const userName = 'Khách';
     const history: string[] = [];
-    const hasPhone = false;
 
-    // 3️⃣ Knowledge base
+    // 4️⃣ Knowledge base
     const knowledgeBase = `
 Bạn là chatbot bán hàng.
+
+TRẠNG THÁI KHÁCH:
+- ${hasPhone ? 'ĐÃ để lại SĐT → ƯU TIÊN CHỐT ĐƠN' : 'CHƯA để lại SĐT → TƯ VẤN'}
+
 LUẬT THÉP:
-- Chỉ tư vấn dựa trên danh sách sản phẩm.
-- Không bịa thông tin.
-- Không tự suy diễn.
-- Nếu không có thông tin thì nói rõ.
+- Chỉ tư vấn dựa trên danh sách sản phẩm
+- Không bịa
+- Không suy diễn
 
 DANH SÁCH SẢN PHẨM:
 ${products
@@ -71,7 +87,7 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
   .join('\n')}
 `;
 
-    // 4️⃣ Gọi AI pipeline
+    // 5️⃣ Gọi AI pipeline
     const aiReply = await processMessage({
       userName,
       message,
@@ -80,7 +96,6 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
       hasPhone,
     });
 
-    // 5️⃣ Fallback an toàn
     if (typeof aiReply === 'string') return aiReply;
     if (aiReply?.text) return aiReply.text;
 
@@ -110,7 +125,27 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         },
       );
     } catch (err) {
-      console.error('sendToFacebook error:', err.response?.data || err.message);
+      console.error(
+        'sendToFacebook error:',
+        err.response?.data || err.message,
+      );
     }
+  }
+
+  /* ===============================
+     4️⃣ PHONE EXTRACTOR
+  ================================ */
+  extractPhone(text: string): string | null {
+    if (!text) return null;
+
+    const regex = /(0|\+84|84)(\d{8,9})/g;
+    const match = text.match(regex);
+    if (!match) return null;
+
+    let phone = match[0];
+    if (phone.startsWith('+84')) phone = '0' + phone.slice(3);
+    if (phone.startsWith('84')) phone = '0' + phone.slice(2);
+
+    return phone;
   }
 }
