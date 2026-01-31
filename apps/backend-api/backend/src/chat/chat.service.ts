@@ -11,87 +11,90 @@ export class ChatService {
      1️⃣ WEBHOOK ENTRY POINT
   ================================ */
   async handleWebhook(payload: any) {
-    try {
-      const entry = payload.entry?.[0];
-      const messaging = entry?.messaging?.[0];
-      if (!messaging) return { ok: true };
+    const entry = payload.entry?.[0];
+    const messaging = entry?.messaging?.[0];
+    if (!messaging || messaging.message?.is_echo) return { ok: true };
 
-      // bỏ echo của Facebook
-      if (messaging.message?.is_echo) return { ok: true };
+    const psid = messaging.sender?.id;
+    const text = messaging.message?.text;
+    if (!psid || !text) return { ok: true };
 
-      const senderId = messaging.sender?.id;
-      const messageText = messaging.message?.text;
+    // 🔹 Upsert Conversation
+    const conversation = await this.prisma.conversation.upsert({
+      where: { psid },
+      update: {},
+      create: { psid },
+    });
 
-      if (!senderId || !messageText) return { ok: true };
+    // 🔹 Lưu message USER
+    await this.prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        sender: 'USER',
+        content: text,
+      },
+    });
 
-      const reply = await this.chat(senderId, messageText);
+    // 🔹 AI xử lý
+    const reply = await this.chat(conversation.id, text);
 
-      await this.sendToFacebook(senderId, reply);
+    // 🔹 Lưu message BOT
+    await this.prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        sender: 'BOT',
+        content: reply,
+      },
+    });
 
-      return { ok: true };
-    } catch (err) {
-      console.error('handleWebhook error:', err);
-      return { ok: false };
-    }
+    await this.sendToFacebook(psid, reply);
+    return { ok: true };
   }
 
   /* ===============================
      2️⃣ CORE CHAT LOGIC
   ================================ */
-  async chat(psid: string, message: string): Promise<string> {
-    // 1️⃣ lấy sản phẩm
+  async chat(conversationId: string, message: string): Promise<string> {
     const products = await this.prisma.product.findMany();
 
-    // 2️⃣ nhận diện SĐT
+    // 🔹 Lấy lịch sử chat thật
+    const history = await this.prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+      take: 10,
+    });
+
+    // 🔹 Detect phone
     const phone = this.extractPhone(message);
     const hasPhone = Boolean(phone);
 
-    // 3️⃣ lưu hội thoại
-    await this.prisma.conversation.upsert({
-      where: { psid },
-      update: {
-        lastMessage: message,
-        phone: phone ?? undefined,
-      },
-      create: {
-        psid,
-        phone,
-        lastMessage: message,
-      },
-    });
-
-    // 4️⃣ context AI
-    const userName = 'Khách';
-    const history: string[] = [];
+    // 🔹 Update phone nếu có
+    if (phone) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { phone },
+      });
+    }
 
     const knowledgeBase = `
 Bạn là chatbot bán hàng.
 
 TRẠNG THÁI KHÁCH:
-- ${hasPhone ? 'ĐÃ để lại SĐT → CHỈ XÁC NHẬN & HỨA GỌI LẠI' : 'CHƯA có SĐT → TƯ VẤN & GỢI Ý ĐỂ LẠI SĐT'}
+- ${hasPhone ? 'ĐÃ có SĐT → XÁC NHẬN & HẸN GỌI' : 'CHƯA có SĐT → TƯ VẤN & GỢI Ý ĐỂ LẠI SĐT'}
 
 LUẬT THÉP:
-- Chỉ tư vấn dựa trên danh sách sản phẩm
+- Chỉ tư vấn dựa trên sản phẩm
 - Không bịa
 - Không suy diễn
 
-DANH SÁCH SẢN PHẨM:
-${products
-  .map(
-    (p) => `
-Tên: ${p.name}
-Giá: ${p.price} VND
-Mô tả: ${p.description}
-Freeship: ${p.freeShip ? 'Có' : 'Không'}
-`,
-  )
-  .join('\n')}
+SẢN PHẨM:
+${products.map(p => `- ${p.name}: ${p.price} VND`).join('\n')}
 `;
 
     const aiReply = await processMessage({
-      userName,
+      userName: 'Khách',
       message,
-      history,
+      history: history.map(h => h.content),
       knowledgeBase,
       hasPhone,
     });
@@ -100,16 +103,16 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     if (aiReply?.text) return aiReply.text;
 
     return hasPhone
-      ? 'Cảm ơn anh/chị đã để lại số điện thoại, nhân viên shop sẽ liên hệ ngay ạ 📞'
-      : 'Shop sẽ hỗ trợ anh/chị ngay nhé!';
+      ? 'Cảm ơn anh/chị đã để lại số điện thoại, shop sẽ liên hệ ngay ạ 📞'
+      : 'Shop hỗ trợ anh/chị ngay nhé!';
   }
 
   /* ===============================
-     3️⃣ SEND MESSAGE TO FACEBOOK
+     3️⃣ SEND TO FACEBOOK
   ================================ */
   async sendToFacebook(psid: string, text: string) {
-    const pageToken = process.env.PAGE_ACCESS_TOKEN;
-    if (!pageToken) return;
+    const token = process.env.PAGE_ACCESS_TOKEN;
+    if (!token) return;
 
     await axios.post(
       'https://graph.facebook.com/v18.0/me/messages',
@@ -118,7 +121,7 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         message: { text },
       },
       {
-        params: { access_token: pageToken },
+        params: { access_token: token },
       },
     );
   }
@@ -127,16 +130,12 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
      4️⃣ PHONE EXTRACTOR
   ================================ */
   extractPhone(text: string): string | null {
-    if (!text) return null;
-
-    const regex = /(0|\+84|84)(\d{8,9})/;
-    const match = text.match(regex);
+    const match = text.match(/(0|\+84|84)(\d{8,9})/);
     if (!match) return null;
 
     let phone = match[0];
     if (phone.startsWith('+84')) phone = '0' + phone.slice(3);
     if (phone.startsWith('84')) phone = '0' + phone.slice(2);
-
     return phone;
   }
 }
