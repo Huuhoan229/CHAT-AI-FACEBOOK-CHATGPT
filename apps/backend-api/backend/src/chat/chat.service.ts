@@ -69,7 +69,9 @@ export class ChatService {
       take: 10,
     });
 
-    // 🔹 Detect phone
+    // 2️⃣ nhận diện intent + SĐT
+    const intent = detectIntent(message);
+
     const phone = this.extractPhone(message);
     const hasPhone = Boolean(phone);
 
