@@ -5,7 +5,7 @@ import { ChatService } from './chat.service';
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  // ✅ BẮT BUỘC – Facebook VERIFY
+  // ✅ Facebook VERIFY webhook
   @Get()
   verifyWebhook(
     @Query('hub.mode') mode: string,
@@ -16,25 +16,15 @@ export class ChatController {
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('✅ Facebook webhook verified');
-      return challenge; // ⚠️ PHẢI return challenge
+      return challenge; // ⚠️ BẮT BUỘC
     }
 
     return '❌ Verification failed';
   }
 
-  // POST – nhận message sau khi verify xong
+  // ✅ Facebook gửi message vào đây
   @Post()
   async handleMessage(@Body() body: any) {
-    return this.chatService.handleWebhook(body);
-  }
-}
-
-@Controller('chat')
-export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
-
-  @Post('webhook')
-  handleWebhook(@Body() body: any) {
     return this.chatService.handleWebhook(body);
   }
 }
