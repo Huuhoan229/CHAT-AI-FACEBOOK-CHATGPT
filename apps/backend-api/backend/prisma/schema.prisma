@@ -30,6 +30,10 @@ model Conversation {
   phone       String?
   status      LeadStatus  @default(NEW)
   lastMessage String?
+  note        String?
+  saleId      String?
+  sale        Sale?       @relation(fields: [saleId], references: [id])
+  
   messages    Message[]
 
   updatedAt   DateTime    @updatedAt
@@ -38,6 +42,7 @@ model Conversation {
   @@index([status])
   @@index([updatedAt])
 }
+
 
 /* =========================
    MESSAGE
@@ -78,4 +83,17 @@ enum MessageIntent {
   LEAVE_PHONE
   CHITCHAT
   UNKNOWN
+}
+/* =========================
+   SALE (NHÂN VIÊN)
+========================= */
+model Sale {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  isActive  Boolean  @default(true)
+
+  leads     Conversation[]
+
+  createdAt DateTime @default(now())
 }

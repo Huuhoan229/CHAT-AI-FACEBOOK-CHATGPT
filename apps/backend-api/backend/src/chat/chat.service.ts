@@ -3,7 +3,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { processMessage } from '../ai/ai.pipeline';
 import axios from 'axios';
 import { detectIntent } from './intent.util';
-import { LeadStatus, MessageIntent, MessageSender } from '@prisma/client';
+import {
+  LeadStatus,
+  MessageIntent,
+  MessageSender,
+} from '@prisma/client';
+import { assignSale } from '../sale/sale.assigner';
 
 @Injectable()
 export class ChatService {
@@ -21,23 +26,40 @@ export class ChatService {
     const text = messaging.message?.text;
     if (!psid || !text) return { ok: true };
 
-    // 🔹 Upsert Conversation
-    const conversation = await this.prisma.conversation.upsert({
+    /* ===============================
+       🔹 CONVERSATION
+    ================================ */
+    let conversation = await this.prisma.conversation.findUnique({
       where: { psid },
-      update: { lastMessage: text },
-      create: { psid, lastMessage: text },
     });
 
-    // 🔹 Detect intent + phone
-    const intent = detectIntent(text);
+    if (!conversation) {
+      const sale = await assignSale(this.prisma);
+
+      conversation = await this.prisma.conversation.create({
+        data: {
+          psid,
+          saleId: sale?.id,
+          status: LeadStatus.NEW,
+        },
+      });
+    }
+
+    /* ===============================
+       🔹 INTENT + PHONE
+    ================================ */
+    const intent: MessageIntent = detectIntent(text);
     const phone = this.extractPhone(text);
     const hasPhone = Boolean(phone);
 
-    // 🔹 Update LEAD STATUS
-    let status: LeadStatus = conversation.status;
+    /* ===============================
+       🔹 UPDATE LEAD STATUS (6.2.3)
+    ================================ */
+    let status = conversation.status;
 
-    if (hasPhone) status = LeadStatus.HOT;
-    else if (
+    if (hasPhone) {
+      status = LeadStatus.HOT;
+    } else if (
       intent === MessageIntent.ASK_PRICE ||
       intent === MessageIntent.ASK_PRODUCT ||
       intent === MessageIntent.ASK_SHIP
@@ -50,10 +72,13 @@ export class ChatService {
       data: {
         phone: phone ?? undefined,
         status,
+        lastMessage: text,
       },
     });
 
-    // 🔹 Lưu USER message
+    /* ===============================
+       🔹 SAVE USER MESSAGE
+    ================================ */
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -63,19 +88,26 @@ export class ChatService {
       },
     });
 
-    // 🔹 AI xử lý
+    /* ===============================
+       🔹 AI RESPONSE
+    ================================ */
     const reply = await this.chat(conversation.id, text, status);
 
-    // 🔹 Lưu BOT message
+    /* ===============================
+       🔹 SAVE BOT MESSAGE
+    ================================ */
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
         sender: MessageSender.BOT,
         content: reply,
+        intent: MessageIntent.UNKNOWN,
       },
     });
 
-    // 🔹 Gửi Facebook
+    /* ===============================
+       🔹 SEND FACEBOOK
+    ================================ */
     await this.sendToFacebook(psid, reply);
 
     return { ok: true };
