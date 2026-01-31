@@ -15,11 +15,13 @@ export class ChatService {
   constructor(private prisma: PrismaService) {}
 
   /* ===============================
-     1️⃣ WEBHOOK ENTRY
+     1️⃣ FACEBOOK WEBHOOK ENTRY
   ================================ */
   async handleWebhook(payload: any) {
     const entry = payload.entry?.[0];
     const messaging = entry?.messaging?.[0];
+
+    // ❌ bỏ echo & payload rỗng
     if (!messaging || messaging.message?.is_echo) return { ok: true };
 
     const psid = messaging.sender?.id;
@@ -33,6 +35,12 @@ export class ChatService {
       where: { psid },
     });
 
+    // 🚫 Lead DONE → bot im lặng
+    if (conversation && conversation.status === LeadStatus.DONE) {
+      return { ok: true };
+    }
+
+    // ➕ Tạo lead mới
     if (!conversation) {
       const sale = await assignSale(this.prisma);
 
@@ -53,9 +61,9 @@ export class ChatService {
     const hasPhone = Boolean(phone);
 
     /* ===============================
-       🔹 UPDATE LEAD STATUS (6.2.3)
+       🔹 UPDATE LEAD STATUS
     ================================ */
-    let status = conversation.status;
+    let status: LeadStatus = conversation.status;
 
     if (hasPhone) {
       status = LeadStatus.HOT;
@@ -91,7 +99,11 @@ export class ChatService {
     /* ===============================
        🔹 AI RESPONSE
     ================================ */
-    const reply = await this.chat(conversation.id, text, status);
+    const reply = await this.chat(
+      conversation.id,
+      text,
+      status,
+    );
 
     /* ===============================
        🔹 SAVE BOT MESSAGE
@@ -106,7 +118,7 @@ export class ChatService {
     });
 
     /* ===============================
-       🔹 SEND FACEBOOK
+       🔹 SEND TO FACEBOOK
     ================================ */
     await this.sendToFacebook(psid, reply);
 
@@ -114,7 +126,7 @@ export class ChatService {
   }
 
   /* ===============================
-     2️⃣ CORE CHAT LOGIC
+     2️⃣ CORE CHAT LOGIC (AI)
   ================================ */
   async chat(
     conversationId: string,
@@ -138,7 +150,9 @@ QUY TẮC:
 - NEW: chào hỏi, giới thiệu sản phẩm
 - INTEREST: tư vấn + gợi ý để lại SĐT
 - HOT: KHÔNG xin SĐT, chỉ xác nhận & hứa liên hệ
-- Không bịa, không suy diễn
+- DONE: KHÔNG trả lời
+- Không bịa
+- Không suy diễn
 
 DANH SÁCH SẢN PHẨM:
 ${products
@@ -164,10 +178,14 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     let reply =
       typeof aiReply === 'string'
         ? aiReply
-        : aiReply?.text ?? 'Shop hỗ trợ anh/chị ngay nhé ạ';
+        : aiReply?.text ??
+          'Shop hỗ trợ anh/chị ngay nhé ạ';
 
     // 🔥 ÉP CHỐT SĐT
-    if (status === LeadStatus.INTEREST && !reply.includes('số')) {
+    if (
+      status === LeadStatus.INTEREST &&
+      !reply.toLowerCase().includes('số')
+    ) {
       reply +=
         '\n\n👉 Anh/chị để lại số điện thoại để shop tư vấn & chốt đơn nhanh hơn nhé ạ 📞';
     }
@@ -193,7 +211,9 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         recipient: { id: psid },
         message: { text },
       },
-      { params: { access_token: token } },
+      {
+        params: { access_token: token },
+      },
     );
   }
 
