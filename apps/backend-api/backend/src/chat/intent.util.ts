@@ -1,3 +1,10 @@
+export type Intent =
+  | 'ASK_PRICE'
+  | 'ASK_SHIP'
+  | 'ASK_PRODUCT'
+  | 'LEAVE_PHONE'
+  | 'CHITCHAT';
+
 export function detectIntent(text: string) {
   const msg = text.toLowerCase();
 

@@ -74,9 +74,9 @@ export class ChatService {
 
     const shouldAskPhone =
       !hasPhone &&
-      (intent === 'ask_price' ||
-        intent === 'order' ||
-        intent === 'shipping');
+      (intent === 'ASK_PRICE' ||
+      intent === 'ASK_SHIP' ||
+      intent === 'ASK_PRODUCT');
 
     // 🔹 Update phone nếu có
     if (phone) {
