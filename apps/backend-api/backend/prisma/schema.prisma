@@ -8,6 +8,9 @@ datasource db {
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
+/* =========================
+   PRODUCT
+========================= */
 model Product {
   id          String   @id @default(cuid())
   name        String
@@ -18,15 +21,55 @@ model Product {
   createdAt   DateTime @default(now())
 }
 
+/* =========================
+   CONVERSATION (LEAD)
+========================= */
 model Conversation {
-  id        String    @id @default(cuid())
-  psid      String    @unique
-  phone     String?
-  messages  Message[]
-  updatedAt DateTime  @updatedAt
-  createdAt DateTime  @default(now())
+  id          String      @id @default(cuid())
+  psid        String      @unique
+  phone       String?
+  status      LeadStatus  @default(NEW)
+  lastMessage String?
+  messages    Message[]
+
+  updatedAt   DateTime    @updatedAt
+  createdAt   DateTime    @default(now())
+
+  @@index([status])
+  @@index([updatedAt])
 }
 
+/* =========================
+   MESSAGE
+========================= */
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  sender         MessageSender
+  content        String
+  intent         MessageIntent @default(UNKNOWN)
+  createdAt      DateTime      @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+/* =========================
+   ENUMS
+========================= */
+enum LeadStatus {
+  NEW        // mới nhắn
+  INTEREST  // hỏi giá / sản phẩm
+  HOT       // đã để SĐT
+  DONE      // sale xử lý xong
+}
+
+enum MessageSender {
+  USER
+  BOT
+}
 
 enum MessageIntent {
   ASK_PRICE
@@ -35,20 +78,4 @@ enum MessageIntent {
   LEAVE_PHONE
   CHITCHAT
   UNKNOWN
-}
-
-model Message {
-  id              String        @id @default(cuid())
-  conversationId  String
-  sender          String
-  content         String
-  intent          MessageIntent @default(UNKNOWN)
-  createdAt       DateTime      @default(now())
-
-  conversation Conversation @relation(fields: [conversationId], references: [id])
-}
-
-enum MessageSender {
-  USER
-  BOT
 }

@@ -1,11 +1,14 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Patch } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LeadStatus } from '@prisma/client';
 
 @Controller('admin')
 export class AdminController {
   constructor(private prisma: PrismaService) {}
 
-  // 🔹 Danh sách hội thoại (lead)
+  /* ===============================
+     1️⃣ DANH SÁCH LEAD
+  ================================ */
   @Get('conversations')
   async getConversations() {
     return this.prisma.conversation.findMany({
@@ -19,15 +22,30 @@ export class AdminController {
     });
   }
 
-  // 🔹 Chi tiết 1 hội thoại
+  /* ===============================
+     2️⃣ CHI TIẾT 1 LEAD
+  ================================ */
   @Get('conversations/:id')
-  async getConversationDetail(@Param('id') id: string) {
+  async getConversation(@Param('id') id: string) {
     return this.prisma.conversation.findUnique({
       where: { id },
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
         },
+      },
+    });
+  }
+
+  /* ===============================
+     3️⃣ SALE ĐÁNH DẤU DONE
+  ================================ */
+  @Patch('conversations/:id/done')
+  async markDone(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: {
+        status: LeadStatus.DONE,
       },
     });
   }
