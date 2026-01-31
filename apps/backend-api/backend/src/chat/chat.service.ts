@@ -9,7 +9,7 @@ export class ChatService {
   constructor(private prisma: PrismaService) {}
 
   /* ===============================
-     1️⃣ WEBHOOK ENTRY POINT
+     1️⃣ WEBHOOK ENTRY
   ================================ */
   async handleWebhook(payload: any) {
     const entry = payload.entry?.[0];
@@ -27,7 +27,7 @@ export class ChatService {
       create: { psid },
     });
 
-    // 🔹 Lưu message USER
+    // 🔹 Lưu USER message
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -39,20 +39,18 @@ export class ChatService {
     // 🔹 AI xử lý
     const reply = await this.chat(conversation.id, text);
 
-    // 🔹 Lưu message BOT
-    const intent = detectIntent(text);
-
+    // 🔹 Lưu BOT message
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
-        sender: 'USER',
-        content: text,
-        intent,
+        sender: 'BOT',
+        content: reply,
       },
     });
 
-
+    // 🔹 Gửi Facebook
     await this.sendToFacebook(psid, reply);
+
     return { ok: true };
   }
 
@@ -62,18 +60,23 @@ export class ChatService {
   async chat(conversationId: string, message: string): Promise<string> {
     const products = await this.prisma.product.findMany();
 
-    // 🔹 Lấy lịch sử chat thật
+    // 🔹 Lịch sử chat
     const history = await this.prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
       take: 10,
     });
 
-    // 2️⃣ nhận diện intent + SĐT
+    // 🔹 Intent + Phone
     const intent = detectIntent(message);
-
     const phone = this.extractPhone(message);
     const hasPhone = Boolean(phone);
+
+    const shouldAskPhone =
+      !hasPhone &&
+      (intent === 'ask_price' ||
+        intent === 'order' ||
+        intent === 'shipping');
 
     // 🔹 Update phone nếu có
     if (phone) {
@@ -86,34 +89,53 @@ export class ChatService {
     const knowledgeBase = `
 Bạn là chatbot bán hàng chuyên nghiệp.
 
-INTENT KHÁCH: ${intent}
+TRẠNG THÁI KHÁCH:
+- Intent: ${intent}
+- ${hasPhone ? 'ĐÃ CÓ SĐT' : 'CHƯA CÓ SĐT'}
 
-CHIẾN LƯỢC:
-- ASK_PRICE → báo giá rõ ràng + gợi ý mua
-- ASK_SHIP → nói chính sách ship
-- ASK_PRODUCT → thúc chốt
-- LEAVE_PHONE → xác nhận & hứa gọi
-- CHITCHAT → tư vấn nhẹ
+QUY TẮC:
+1. Nếu chưa có SĐT & intent là hỏi giá / ship / mua → gợi ý để lại SĐT
+2. Nếu đã có SĐT → không xin lại
+3. Không bịa, không suy diễn
 
-SẢN PHẨM:
-${products.map(p => `- ${p.name}: ${p.price} VND`).join('\n')}
+DANH SÁCH SẢN PHẨM:
+${products
+  .map(
+    (p) => `
+Tên: ${p.name}
+Giá: ${p.price} VND
+Mô tả: ${p.description}
+Freeship: ${p.freeShip ? 'Có' : 'Không'}
+`,
+  )
+  .join('\n')}
 `;
-
 
     const aiReply = await processMessage({
       userName: 'Khách',
       message,
-      history: history.map(h => h.content),
+      history: history.map((h) => h.content),
       knowledgeBase,
       hasPhone,
     });
 
-    if (typeof aiReply === 'string') return aiReply;
-    if (aiReply?.text) return aiReply.text;
+    let reply =
+      typeof aiReply === 'string'
+        ? aiReply
+        : aiReply?.text ?? '';
 
-    return hasPhone
-      ? 'Cảm ơn anh/chị đã để lại số điện thoại, shop sẽ liên hệ ngay ạ 📞'
-      : 'Shop hỗ trợ anh/chị ngay nhé!';
+    // 🔥 ÉP CHỐT SĐT
+    if (shouldAskPhone && !reply.includes('số')) {
+      reply +=
+        '\n\n👉 Anh/chị để lại số điện thoại để shop tư vấn & chốt đơn nhanh hơn nhé ạ 📞';
+    }
+
+    if (hasPhone) {
+      reply =
+        'Cảm ơn anh/chị đã để lại số điện thoại 🙏 Nhân viên shop sẽ liên hệ ngay để tư vấn và chốt đơn ạ.';
+    }
+
+    return reply;
   }
 
   /* ===============================
