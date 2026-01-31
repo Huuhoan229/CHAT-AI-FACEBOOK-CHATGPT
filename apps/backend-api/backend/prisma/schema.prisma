@@ -27,16 +27,25 @@ model Conversation {
   createdAt DateTime  @default(now())
 }
 
+
+enum MessageIntent {
+  ASK_PRICE
+  ASK_SHIP
+  ASK_PRODUCT
+  LEAVE_PHONE
+  CHITCHAT
+  UNKNOWN
+}
+
 model Message {
-  id             String        @id @default(cuid())
-  conversationId String
-  sender         MessageSender
-  content        String
-  createdAt      DateTime      @default(now())
+  id              String        @id @default(cuid())
+  conversationId  String
+  sender          String
+  content         String
+  intent          MessageIntent @default(UNKNOWN)
+  createdAt       DateTime      @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
 }
 
 enum MessageSender {

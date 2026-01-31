@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { processMessage } from '../ai/ai.pipeline';
 import axios from 'axios';
+import { detectIntent } from './intent.util';
 
 @Injectable()
 export class ChatService {
@@ -39,13 +40,17 @@ export class ChatService {
     const reply = await this.chat(conversation.id, text);
 
     // 🔹 Lưu message BOT
+    const intent = detectIntent(text);
+
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
-        sender: 'BOT',
-        content: reply,
+        sender: 'USER',
+        content: text,
+        intent,
       },
     });
+
 
     await this.sendToFacebook(psid, reply);
     return { ok: true };
@@ -77,19 +82,21 @@ export class ChatService {
     }
 
     const knowledgeBase = `
-Bạn là chatbot bán hàng.
+Bạn là chatbot bán hàng chuyên nghiệp.
 
-TRẠNG THÁI KHÁCH:
-- ${hasPhone ? 'ĐÃ có SĐT → XÁC NHẬN & HẸN GỌI' : 'CHƯA có SĐT → TƯ VẤN & GỢI Ý ĐỂ LẠI SĐT'}
+INTENT KHÁCH: ${intent}
 
-LUẬT THÉP:
-- Chỉ tư vấn dựa trên sản phẩm
-- Không bịa
-- Không suy diễn
+CHIẾN LƯỢC:
+- ASK_PRICE → báo giá rõ ràng + gợi ý mua
+- ASK_SHIP → nói chính sách ship
+- ASK_PRODUCT → thúc chốt
+- LEAVE_PHONE → xác nhận & hứa gọi
+- CHITCHAT → tư vấn nhẹ
 
 SẢN PHẨM:
 ${products.map(p => `- ${p.name}: ${p.price} VND`).join('\n')}
 `;
+
 
     const aiReply = await processMessage({
       userName: 'Khách',
