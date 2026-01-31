@@ -28,3 +28,13 @@ export class ChatController {
     return this.chatService.handleWebhook(body);
   }
 }
+
+@Controller('chat')
+export class ChatController {
+  constructor(private readonly chatService: ChatService) {}
+
+  @Post('webhook')
+  handleWebhook(@Body() body: any) {
+    return this.chatService.handleWebhook(body);
+  }
+}
