@@ -33,7 +33,7 @@ model Conversation {
   note        String?
   saleId      String?
   sale        Sale?       @relation(fields: [saleId], references: [id])
-  
+  mailSent    Boolean     @default(false) // 👈 CHỐNG SPAM MAIL
   messages    Message[]
 
   updatedAt   DateTime    @updatedAt

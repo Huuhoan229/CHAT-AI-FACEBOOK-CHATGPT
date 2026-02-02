@@ -2,11 +2,19 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Admin – Lead</title>
+  <title>Admin</title>
 </head>
 <body>
-  <h2>📋 Danh sách Lead</h2>
+  <h2>📊 Thống kê</h2>
+  <ul>
+    <li>Tổng: <%= stats.total %></li>
+    <li>NEW: <%= stats.new %></li>
+    <li>INTEREST: <%= stats.interest %></li>
+    <li>HOT: <%= stats.hot %></li>
+    <li>DONE: <%= stats.done %></li>
+  </ul>
 
+  <h2>📋 Lead</h2>
   <table border="1" cellpadding="8">
     <tr>
       <th>SĐT</th>
