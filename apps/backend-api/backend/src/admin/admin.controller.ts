@@ -39,54 +39,6 @@ export class AdminController {
     });
   }
 
-/* ===============================
-   5️⃣ DASHBOARD STATS (6.5)
-================================ */
-@Get('stats')
-async getStats() {
-  const [
-    total,
-    newLead,
-    interest,
-    hot,
-    done,
-  ] = await Promise.all([
-    this.prisma.conversation.count(),
-    this.prisma.conversation.count({ where: { status: 'NEW' } }),
-    this.prisma.conversation.count({ where: { status: 'INTEREST' } }),
-    this.prisma.conversation.count({ where: { status: 'HOT' } }),
-    this.prisma.conversation.count({ where: { status: 'DONE' } }),
-  ]);
-
-  // Lead hôm nay
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const todayLead = await this.prisma.conversation.count({
-    where: {
-      createdAt: { gte: today },
-    },
-  });
-
-  // HOT chưa xử lý
-  const hotPending = await this.prisma.conversation.count({
-    where: {
-      status: 'HOT',
-    },
-  });
-
-  return {
-    total,
-    todayLead,
-    new: newLead,
-    interest,
-    hot,
-    hotPending,
-    done,
-  };
-}
-
-
   /* ===============================
      3️⃣ MARK LEAD DONE (6.3)
   ================================ */
@@ -114,3 +66,32 @@ async getStats() {
     });
   }
 }
+
+/* ===============================
+   📊 DASHBOARD STATS
+=============================== */
+@Get('stats')
+async getStats() {
+  const [
+    total,
+    newLead,
+    interest,
+    hot,
+    done,
+  ] = await Promise.all([
+    this.prisma.conversation.count(),
+    this.prisma.conversation.count({ where: { status: 'NEW' } }),
+    this.prisma.conversation.count({ where: { status: 'INTEREST' } }),
+    this.prisma.conversation.count({ where: { status: 'HOT' } }),
+    this.prisma.conversation.count({ where: { status: 'DONE' } }),
+  ]);
+
+  return {
+    total,
+    new: newLead,
+    interest,
+    hot,
+    done,
+  };
+}
+

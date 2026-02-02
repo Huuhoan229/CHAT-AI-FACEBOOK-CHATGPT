@@ -4,24 +4,19 @@
   "description": "Chat AI Facebook Backend",
   "private": true,
   "license": "UNLICENSED",
-
   "scripts": {
     "build": "npx prisma generate && npx nest build",
     "start": "node dist/main.js",
     "heroku-postbuild": "echo skip postbuild",
-
     "start:dev": "npx nest start --watch",
     "start:debug": "npx nest start --debug --watch",
-
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
-
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^11.0.1",
@@ -29,12 +24,12 @@
     "@nestjs/platform-express": "^11.0.1",
     "@prisma/client": "^6.19.2",
     "axios": "^1.13.4",
+    "ejs": "^4.0.1",
     "openai": "^6.17.0",
     "prisma": "^6.19.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
-
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/testing": "^11.0.1",

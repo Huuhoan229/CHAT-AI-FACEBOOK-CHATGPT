@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Admin – Lead</title>
+</head>
+<body>
+  <h2>📋 Danh sách Lead</h2>
+
+  <table border="1" cellpadding="8">
+    <tr>
+      <th>SĐT</th>
+      <th>Trạng thái</th>
+      <th>Tin nhắn cuối</th>
+      <th></th>
+    </tr>
+
+    <% conversations.forEach(c => { %>
+      <tr>
+        <td><%= c.phone || '—' %></td>
+        <td><%= c.status %></td>
+        <td><%= c.messages[0]?.content || '' %></td>
+        <td>
+          <a href="/admin/<%= c.id %>">Xem</a>
+        </td>
+      </tr>
+    <% }) %>
+  </table>
+</body>
+</html>
