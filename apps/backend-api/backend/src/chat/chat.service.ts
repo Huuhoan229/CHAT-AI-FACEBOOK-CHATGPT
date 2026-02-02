@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { processMessage } from '../ai/ai.pipeline';
 import axios from 'axios';
+import { processMessage } from '../ai/ai.pipeline';
 import { detectIntent } from './intent.util';
 import {
   LeadStatus,
@@ -19,13 +19,26 @@ export class ChatService {
   ) {}
 
   /* ===============================
+     🔁 GỘP MESSAGE + DELAY
+  ================================ */
+  private pendingMessages = new Map<string, string>();
+  private pendingTimers = new Map<string, NodeJS.Timeout>();
+
+  /* ===============================
+     🕒 TIME DIFF HELPER
+  ================================ */
+  private getDayDiff(from: Date, to: Date) {
+    const diff = to.getTime() - from.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }
+
+  /* ===============================
      1️⃣ FACEBOOK WEBHOOK ENTRY
   ================================ */
   async handleWebhook(payload: any) {
     const entry = payload.entry?.[0];
     const messaging = entry?.messaging?.[0];
 
-    // bỏ echo & payload rỗng
     if (!messaging || messaging.message?.is_echo) {
       return { ok: true };
     }
@@ -41,15 +54,8 @@ export class ChatService {
       where: { psid },
     });
 
-    // Lead DONE → bot không trả lời nữa
-    if (conversation && conversation.status === LeadStatus.DONE) {
-      return { ok: true };
-    }
-
-    // Tạo lead mới
     if (!conversation) {
       const sale = await assignSale(this.prisma);
-
       conversation = await this.prisma.conversation.create({
         data: {
           psid,
@@ -58,6 +64,24 @@ export class ChatService {
         },
       });
     }
+      if (conversation.botPaused) {
+        return { ok: true };
+      }
+
+      // DONE nhưng khách nhắn lại sau 1 ngày → mở lại lead
+      if (
+        conversation.status === LeadStatus.DONE &&
+        conversation.updatedAt &&
+        this.getDayDiff(
+          new Date(conversation.updatedAt),
+          new Date(),
+        ) >= 1
+      ) {
+        conversation = await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { status: LeadStatus.INTEREST },
+        });
+      }
 
     /* ===============================
        🔹 INTENT + PHONE
@@ -103,8 +127,23 @@ export class ChatService {
       },
     });
 
+    await this.prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        sender: MessageSender.BOT,
+        content: reply,
+        intent: MessageIntent.UNKNOWN,
+        logReason: `
+    STATUS=${status}
+    DAY_DIFF=${dayDiff}
+    HAS_PHONE=${status === LeadStatus.HOT}
+    UPSCALE=${dayDiff > 7}
+    `.trim(),
+      },
+    });
+
     /* ===============================
-       🔹 SEND MAIL WHEN JUST HOT
+       📧 SEND MAIL (JUST HOT)
     ================================ */
     if (hasPhone && !wasHot) {
       await this.mailService.sendLeadMail({
@@ -115,30 +154,44 @@ export class ChatService {
     }
 
     /* ===============================
-       🔹 AI RESPONSE
+       🔁 GOM MESSAGE + DELAY AI
     ================================ */
-    const reply = await this.chat(
+    const prev = this.pendingMessages.get(conversation.id) || '';
+    this.pendingMessages.set(
       conversation.id,
-      text,
-      status,
+      prev ? prev + '\n' + text : text,
     );
 
-    /* ===============================
-       🔹 SAVE BOT MESSAGE
-    ================================ */
-    await this.prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        sender: MessageSender.BOT,
-        content: reply,
-        intent: MessageIntent.UNKNOWN,
-      },
-    });
+    if (this.pendingTimers.has(conversation.id)) {
+      clearTimeout(this.pendingTimers.get(conversation.id)!);
+    }
 
-    /* ===============================
-       🔹 SEND TO FACEBOOK
-    ================================ */
-    await this.sendToFacebook(psid, reply);
+    const timer = setTimeout(async () => {
+      const finalMessage = this.pendingMessages.get(conversation.id);
+      if (!finalMessage) return;
+
+      const reply = await this.chat(
+        conversation.id,
+        finalMessage,
+        status,
+      );
+
+      await this.prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          sender: MessageSender.BOT,
+          content: reply,
+          intent: MessageIntent.UNKNOWN,
+        },
+      });
+
+      await this.sendToFacebook(psid, reply);
+
+      this.pendingMessages.delete(conversation.id);
+      this.pendingTimers.delete(conversation.id);
+    }, 2500);
+
+    this.pendingTimers.set(conversation.id, timer);
 
     return { ok: true };
   }
@@ -159,18 +212,57 @@ export class ChatService {
       take: 10,
     });
 
+    /* ===============================
+       🕒 TIME-BASED STRATEGY (A/B/C)
+    ================================ */
+    const lastUserMsg = [...history]
+      .reverse()
+      .find((m) => m.sender === MessageSender.USER);
+
+    let dayDiff = 0;
+    if (lastUserMsg) {
+      dayDiff = this.getDayDiff(
+        new Date(lastUserMsg.createdAt),
+        new Date(),
+      );
+    }
+
+    let extraRule = '';
+
+    if (status === LeadStatus.DONE) {
+      if (dayDiff < 1) {
+        extraRule = `
+KHÁCH VỪA MUA.
+- Chỉ hỗ trợ HDSD / bảo quản
+- Không bán thêm
+`;
+      } else if (dayDiff <= 7) {
+        extraRule = `
+KHÁCH ĐÃ MUA GẦN ĐÂY.
+- Tư vấn nhẹ nếu cần
+- Không tạo áp lực mua
+`;
+      } else {
+        extraRule = `
+KHÁCH QUAY LẠI SAU THỜI GIAN DÀI.
+- Có thể gợi ý sản phẩm liên quan
+- Upsell nhẹ, thân thiện
+`;
+      }
+    }
+
     const knowledgeBase = `
 Bạn là chatbot bán hàng chuyên nghiệp.
 
 TRẠNG THÁI KHÁCH: ${status}
+SỐ NGÀY TỪ TIN NHẮN CUỐI: ${dayDiff}
 
-QUY TẮC:
-- NEW: chào hỏi, giới thiệu sản phẩm
-- INTEREST: tư vấn + gợi ý để lại SĐT
-- HOT: KHÔNG xin SĐT, chỉ xác nhận & hứa liên hệ
-- DONE: KHÔNG trả lời
+QUY TẮC CHUNG:
 - Không bịa
 - Không suy diễn
+- Không gây áp lực mua
+
+${extraRule}
 
 DANH SÁCH SẢN PHẨM:
 ${products
@@ -198,7 +290,6 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         ? aiReply
         : aiReply?.text ?? 'Shop hỗ trợ anh/chị ngay nhé ạ';
 
-    // Ép xin SĐT khi INTEREST
     if (
       status === LeadStatus.INTEREST &&
       !reply.toLowerCase().includes('số')
@@ -207,7 +298,6 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         '\n\n👉 Anh/chị để lại số điện thoại để shop tư vấn & chốt đơn nhanh hơn nhé ạ 📞';
     }
 
-    // Khi đã HOT
     if (status === LeadStatus.HOT) {
       reply =
         'Cảm ơn anh/chị đã để lại số điện thoại 🙏 Nhân viên shop sẽ liên hệ ngay để tư vấn và chốt đơn ạ.';
@@ -224,7 +314,7 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     if (!token) return;
 
     await axios.post(
-      'https://graph.facebook.com/v18.0/me/messages',
+      'https://graph.facebook.com/v19.0/me/messages',
       {
         recipient: { id: psid },
         message: { text },

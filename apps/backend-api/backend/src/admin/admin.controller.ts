@@ -112,3 +112,19 @@ export class AdminController {
     };
   }
 }
+
+  @Patch('conversations/:id/pause-bot')
+  pauseBot(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: { botPaused: true },
+    });
+  }
+
+  @Patch('conversations/:id/resume-bot')
+  resumeBot(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: { botPaused: false },
+    });
+  }
