@@ -108,7 +108,7 @@ export class ChatService {
     ================================ */
     if (hasPhone && !wasHot) {
       await this.mailService.sendLeadMail({
-        phone,
+        phone: phone ?? undefined,
         psid,
         conversationId: conversation.id,
       });
