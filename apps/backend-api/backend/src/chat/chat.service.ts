@@ -9,10 +9,14 @@ import {
   MessageSender,
 } from '@prisma/client';
 import { assignSale } from '../sale/sale.assigner';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class ChatService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   /* ===============================
      1️⃣ FACEBOOK WEBHOOK ENTRY
@@ -21,8 +25,10 @@ export class ChatService {
     const entry = payload.entry?.[0];
     const messaging = entry?.messaging?.[0];
 
-    // ❌ bỏ echo & payload rỗng
-    if (!messaging || messaging.message?.is_echo) return { ok: true };
+    // bỏ echo & payload rỗng
+    if (!messaging || messaging.message?.is_echo) {
+      return { ok: true };
+    }
 
     const psid = messaging.sender?.id;
     const text = messaging.message?.text;
@@ -35,12 +41,12 @@ export class ChatService {
       where: { psid },
     });
 
-    // 🚫 Lead DONE → bot im lặng
+    // Lead DONE → bot không trả lời nữa
     if (conversation && conversation.status === LeadStatus.DONE) {
       return { ok: true };
     }
 
-    // ➕ Tạo lead mới
+    // Tạo lead mới
     if (!conversation) {
       const sale = await assignSale(this.prisma);
 
@@ -59,10 +65,8 @@ export class ChatService {
     const intent: MessageIntent = detectIntent(text);
     const phone = this.extractPhone(text);
     const hasPhone = Boolean(phone);
+    const wasHot = conversation.status === LeadStatus.HOT;
 
-    /* ===============================
-       🔹 UPDATE LEAD STATUS
-    ================================ */
     let status: LeadStatus = conversation.status;
 
     if (hasPhone) {
@@ -75,6 +79,9 @@ export class ChatService {
       status = LeadStatus.INTEREST;
     }
 
+    /* ===============================
+       🔹 UPDATE CONVERSATION
+    ================================ */
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -95,6 +102,17 @@ export class ChatService {
         intent,
       },
     });
+
+    /* ===============================
+       🔹 SEND MAIL WHEN JUST HOT
+    ================================ */
+    if (hasPhone && !wasHot) {
+      await this.mailService.sendLeadMail({
+        phone,
+        psid,
+        conversationId: conversation.id,
+      });
+    }
 
     /* ===============================
        🔹 AI RESPONSE
@@ -178,10 +196,9 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     let reply =
       typeof aiReply === 'string'
         ? aiReply
-        : aiReply?.text ??
-          'Shop hỗ trợ anh/chị ngay nhé ạ';
+        : aiReply?.text ?? 'Shop hỗ trợ anh/chị ngay nhé ạ';
 
-    // 🔥 ÉP CHỐT SĐT
+    // Ép xin SĐT khi INTEREST
     if (
       status === LeadStatus.INTEREST &&
       !reply.toLowerCase().includes('số')
@@ -190,6 +207,7 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         '\n\n👉 Anh/chị để lại số điện thoại để shop tư vấn & chốt đơn nhanh hơn nhé ạ 📞';
     }
 
+    // Khi đã HOT
     if (status === LeadStatus.HOT) {
       reply =
         'Cảm ơn anh/chị đã để lại số điện thoại 🙏 Nhân viên shop sẽ liên hệ ngay để tư vấn và chốt đơn ạ.';
@@ -211,9 +229,7 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
         recipient: { id: psid },
         message: { text },
       },
-      {
-        params: { access_token: token },
-      },
+      { params: { access_token: token } },
     );
   }
 

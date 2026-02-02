@@ -17,20 +17,29 @@ export class MailService {
     });
   }
 
-  async sendLeadMail(to: string, payload: {
+  async sendLeadMail(data: {
     phone?: string;
-    status: string;
-    lastMessage: string;
+    psid: string;
+    conversationId: string;
   }) {
+    const to =
+      process.env.LEAD_RECEIVER || process.env.MAIL_USER;
+
+    const adminUrl = `${process.env.ADMIN_URL}/admin/conversations/${data.conversationId}`;
+
     await this.transporter.sendMail({
-      from: `"AI BOT" <${process.env.MAIL_USER}>`,
+      from: `"FB Chatbot" <${process.env.MAIL_USER}>`,
       to,
-      subject: '🔥 LEAD HOT MỚI',
+      subject: '🔥 LEAD HOT – Có khách để lại SĐT',
       html: `
-        <h3>📞 Lead mới từ Facebook</h3>
-        <p><b>SĐT:</b> ${payload.phone ?? 'Chưa có'}</p>
-        <p><b>Trạng thái:</b> ${payload.status}</p>
-        <p><b>Tin nhắn cuối:</b> ${payload.lastMessage}</p>
+        <h3>📞 Lead mới</h3>
+        <p><b>SĐT:</b> ${data.phone || 'Không rõ'}</p>
+        <p><b>PSID:</b> ${data.psid}</p>
+        <p>
+          <a href="${adminUrl}">
+            👉 Xem hội thoại chi tiết
+          </a>
+        </p>
       `,
     });
   }
