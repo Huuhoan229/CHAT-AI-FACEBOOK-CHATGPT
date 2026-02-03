@@ -1,5 +1,5 @@
-import StatCard from '@/components/StatCard';
-import { apiGet } from '@/lib/api';
+import StatCard from '../components/StatCard';
+import { apiGet } from '../lib/api';
 
 export default async function Dashboard() {
   const stats = await apiGet('/admin/stats');
