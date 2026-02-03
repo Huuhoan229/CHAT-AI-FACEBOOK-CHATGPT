@@ -1,10 +1,16 @@
-import { Controller, Get, Patch, Param, Body } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Body,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus } from '@prisma/client';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /* ===============================
      1️⃣ LIST LEADS
@@ -40,18 +46,69 @@ export class AdminController {
   }
 
   /* ===============================
-     3️⃣ MARK LEAD DONE
+     3️⃣ SALE XỬ LÝ XONG (BOT VẪN TƯ VẤN)
   ================================ */
-  @Patch('conversations/:id/done')
-  async markDone(@Param('id') id: string) {
+  @Patch('conversations/:id/done-sale')
+  async markDoneSale(@Param('id') id: string) {
     return this.prisma.conversation.update({
       where: { id },
-      data: { status: LeadStatus.DONE },
+      data: {
+        status: LeadStatus.DONE_SALE,
+        botPaused: false,
+      },
     });
   }
 
   /* ===============================
-     4️⃣ UPDATE NOTE
+     4️⃣ CHẶN BOT HOÀN TOÀN
+  ================================ */
+  @Patch('conversations/:id/block-bot')
+  async blockBot(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: {
+        status: LeadStatus.DONE_BLOCK,
+        botPaused: true,
+      },
+    });
+  }
+
+  /* ===============================
+     5️⃣ TẠM PAUSE BOT
+  ================================ */
+  @Patch('conversations/:id/pause-bot')
+  async pauseBot(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: { botPaused: true },
+    });
+  }
+
+  /* ===============================
+     6️⃣ RESUME BOT
+  ================================ */
+  @Patch('conversations/:id/resume-bot')
+  async resumeBot(@Param('id') id: string) {
+    const convo = await this.prisma.conversation.findUnique({
+      where: { id },
+    });
+
+    if (convo?.status === LeadStatus.DONE_BLOCK) {
+      return {
+        ok: false,
+        reason: 'BOT_BLOCKED_PERMANENTLY',
+      };
+    }
+
+    return this.prisma.conversation.update({
+      where: { id },
+      data: { botPaused: false },
+    });
+  }
+
+
+  /* ===============================
+     7️⃣ UPDATE NOTE
   ================================ */
   @Patch('conversations/:id/note')
   async updateNote(
@@ -65,7 +122,7 @@ export class AdminController {
   }
 
   /* ===============================
-     📊 5️⃣ DASHBOARD STATS (7.7)
+     📊 8️⃣ DASHBOARD STATS
   ================================ */
   @Get('stats')
   async getStats() {
@@ -74,7 +131,8 @@ export class AdminController {
       newLead,
       interest,
       hot,
-      done,
+      doneSale,
+      doneBlock,
     ] = await Promise.all([
       this.prisma.conversation.count(),
       this.prisma.conversation.count({
@@ -87,7 +145,10 @@ export class AdminController {
         where: { status: LeadStatus.HOT },
       }),
       this.prisma.conversation.count({
-        where: { status: LeadStatus.DONE },
+        where: { status: LeadStatus.DONE_SALE },
+      }),
+      this.prisma.conversation.count({
+        where: { status: LeadStatus.DONE_BLOCK },
       }),
     ]);
 
@@ -96,12 +157,13 @@ export class AdminController {
       new: newLead,
       interest,
       hot,
-      done,
+      doneSale,
+      doneBlock,
     };
   }
 
   /* ===============================
-     ⚙️ 6️⃣ EMAIL CONFIG (7.6)
+     ⚙️ 9️⃣ EMAIL CONFIG
   ================================ */
   @Get('config/email')
   getEmail() {
@@ -112,19 +174,43 @@ export class AdminController {
     };
   }
 }
+  
+/* ===============================
+   🔄 10️⃣ REOPEN LEAD (DONE → INTEREST)
+================================ */
+@Patch('conversations/:id/reopen')
+async reopenLead(@Param('id') id: string) {
+  return this.prisma.conversation.update({
+    where: { id },
+    data: {
+      status: LeadStatus.INTEREST,
+      botPaused: false,
+    },
+  });
+}
 
-  @Patch('conversations/:id/pause-bot')
-  pauseBot(@Param('id') id: string) {
-    return this.prisma.conversation.update({
-      where: { id },
-      data: { botPaused: true },
-    });
-  }
+@Patch('conversations/:id/sale-message')
+async saleMessage(
+  @Param('id') id: string,
+  @Body('content') content: string,
+) {
+  // 1️⃣ Lưu tin nhắn SALE
+  await this.prisma.message.create({
+    data: {
+      conversationId: id,
+      sender: MessageSender.SALE,
+      content,
+    },
+  });
 
-  @Patch('conversations/:id/resume-bot')
-  resumeBot(@Param('id') id: string) {
-    return this.prisma.conversation.update({
-      where: { id },
-      data: { botPaused: false },
-    });
-  }
+  // 2️⃣ Pause bot ngay lập tức
+  await this.prisma.conversation.update({
+    where: { id },
+    data: {
+      botPaused: true,
+      updatedAt: new Date(),
+    },
+  });
+
+  return { ok: true };
+}

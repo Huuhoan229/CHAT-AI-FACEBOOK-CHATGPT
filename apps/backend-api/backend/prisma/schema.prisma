@@ -8,9 +8,9 @@ datasource db {
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
-/* =========================
-   PRODUCT
-========================= */
+/// =========================
+///    PRODUCT
+/// =========================
 model Product {
   id          String   @id @default(cuid())
   name        String
@@ -21,56 +21,64 @@ model Product {
   createdAt   DateTime @default(now())
 }
 
-/* =========================
-   CONVERSATION (LEAD)
-========================= */
+/// =========================
+///    CONVERSATION (LEAD)
+/// =========================
 model Conversation {
-  id          String      @id @default(cuid())
-  psid        String      @unique
+  id          String     @id @default(cuid())
+  psid        String     @unique
   phone       String?
-  status      LeadStatus  @default(NEW)
+  status      LeadStatus @default(NEW)
   lastMessage String?
-  note        String?
+  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now())
   saleId      String?
-  sale        Sale?       @relation(fields: [saleId], references: [id])
-  mailSent    Boolean     @default(false) // 👈 CHỐNG SPAM MAIL
+  note        String?
+  mailSent    Boolean    @default(false)
+  botPaused   Boolean    @default(false)
+  sale        Sale?      @relation(fields: [saleId], references: [id])
   messages    Message[]
-  botPaused   Boolean     @default(false) // 👈 THÊM
-  updatedAt   DateTime    @updatedAt
-  createdAt   DateTime    @default(now())
 
   @@index([status])
   @@index([updatedAt])
 }
 
-
-/* =========================
-   MESSAGE
-========================= */
 model Message {
   id             String        @id @default(cuid())
   conversationId String
   sender         MessageSender
   content        String
   intent         MessageIntent @default(UNKNOWN)
-  externalId     String? @unique   // 👈 CHỐT CHẶN DUP
   createdAt      DateTime      @default(now())
+  externalId     String?       @unique
   logReason      String?
-  conversation Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
 
   @@index([conversationId])
   @@index([createdAt])
 }
 
-/* =========================
-   ENUMS
-========================= */
+/// =========================
+///    SALE (NHÂN VIÊN)
+/// =========================
+model Sale {
+  id        String         @id @default(cuid())
+  name      String
+  phone     String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  leads     Conversation[]
+}
+
+/// =========================
+///    ENUMS
+/// =========================
 enum LeadStatus {
-  NEW        // mới nhắn
-  INTEREST  // hỏi giá / sản phẩm
-  HOT       // đã để SĐT
-  DONE_SALE   // 👈 sale xử lý xong
-  DONE_BLOCK  // 👈 chặn bot
+  NEW
+  INTEREST
+  HOT
+  DONE_SALE
+  DONE_BLOCK
 }
 
 enum MessageSender {
@@ -85,17 +93,4 @@ enum MessageIntent {
   LEAVE_PHONE
   CHITCHAT
   UNKNOWN
-}
-/* =========================
-   SALE (NHÂN VIÊN)
-========================= */
-model Sale {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  isActive  Boolean  @default(true)
-
-  leads     Conversation[]
-
-  createdAt DateTime @default(now())
 }

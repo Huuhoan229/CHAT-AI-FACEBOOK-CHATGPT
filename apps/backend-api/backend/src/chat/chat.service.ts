@@ -24,28 +24,35 @@ export class ChatService {
   private pendingMessages = new Map<string, string>();
   private pendingTimers = new Map<string, NodeJS.Timeout>();
 
-  /* ===============================
-     🕒 TIME DIFF HELPER
-  ================================ */
-  private getDayDiff(from: Date, to: Date) {
-    const diff = to.getTime() - from.getTime();
-    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  private dayDiff(from: Date) {
+    return Math.floor(
+      (Date.now() - from.getTime()) / (1000 * 60 * 60 * 24),
+    );
   }
 
   /* ===============================
-     1️⃣ FACEBOOK WEBHOOK ENTRY
+     1️⃣ FACEBOOK WEBHOOK
   ================================ */
   async handleWebhook(payload: any) {
-    const entry = payload.entry?.[0];
-    const messaging = entry?.messaging?.[0];
-
+    const messaging = payload.entry?.[0]?.messaging?.[0];
     if (!messaging || messaging.message?.is_echo) {
       return { ok: true };
     }
 
     const psid = messaging.sender?.id;
     const text = messaging.message?.text;
+    const externalId = messaging.message?.mid;
     if (!psid || !text) return { ok: true };
+
+    /* ===============================
+       ❌ CHẶN DUP FACEBOOK
+    ================================ */
+    if (externalId) {
+      const existed = await this.prisma.message.findUnique({
+        where: { externalId },
+      });
+      if (existed) return { ok: true };
+    }
 
     /* ===============================
        🔹 CONVERSATION
@@ -64,43 +71,62 @@ export class ChatService {
         },
       });
     }
-      if (conversation.botPaused) {
-        return { ok: true };
-      }
 
-      // DONE nhưng khách nhắn lại sau 1 ngày → mở lại lead
-      if (
-        conversation.status === LeadStatus.DONE &&
-        conversation.updatedAt &&
-        this.getDayDiff(
-          new Date(conversation.updatedAt),
-          new Date(),
-        ) >= 1
-      ) {
-        conversation = await this.prisma.conversation.update({
+    /* ===============================
+       🔁 AUTO RESUME BOT (5.3)
+    ================================ */
+    if (conversation.botPaused) {
+      const lastSaleMsg = await this.prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          sender: MessageSender.SALE,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (lastSaleMsg) {
+        const minutes =
+          (Date.now() - lastSaleMsg.createdAt.getTime()) /
+          60000;
+
+        if (minutes < 10) {
+          return { ok: true };
+        }
+
+        await this.prisma.conversation.update({
           where: { id: conversation.id },
-          data: { status: LeadStatus.INTEREST },
+          data: { botPaused: false },
         });
       }
+    }
+
+    /* ===============================
+       🚫 BLOCK BOT HOÀN TOÀN
+    ================================ */
+    if (conversation.status === LeadStatus.DONE_BLOCK) {
+      return { ok: true };
+    }
 
     /* ===============================
        🔹 INTENT + PHONE
     ================================ */
-    const intent: MessageIntent = detectIntent(text);
+    const intent = detectIntent(text);
     const phone = this.extractPhone(text);
     const hasPhone = Boolean(phone);
-    const wasHot = conversation.status === LeadStatus.HOT;
 
-    let status: LeadStatus = conversation.status;
+    let nextStatus = conversation.status;
 
     if (hasPhone) {
-      status = LeadStatus.HOT;
+      nextStatus = LeadStatus.HOT;
     } else if (
       intent === MessageIntent.ASK_PRICE ||
       intent === MessageIntent.ASK_PRODUCT ||
       intent === MessageIntent.ASK_SHIP
     ) {
-      status = LeadStatus.INTEREST;
+      // ❗ DONE_SALE KHÔNG BỊ ĐẨY NGƯỢC
+      if (conversation.status !== LeadStatus.DONE_SALE) {
+        nextStatus = LeadStatus.INTEREST;
+      }
     }
 
     /* ===============================
@@ -110,7 +136,7 @@ export class ChatService {
       where: { id: conversation.id },
       data: {
         phone: phone ?? undefined,
-        status,
+        status: nextStatus,
         lastMessage: text,
       },
     });
@@ -124,32 +150,23 @@ export class ChatService {
         sender: MessageSender.USER,
         content: text,
         intent,
-      },
-    });
-
-    await this.prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        sender: MessageSender.BOT,
-        content: reply,
-        intent: MessageIntent.UNKNOWN,
-        logReason: `
-    STATUS=${status}
-    DAY_DIFF=${dayDiff}
-    HAS_PHONE=${status === LeadStatus.HOT}
-    UPSCALE=${dayDiff > 7}
-    `.trim(),
+        externalId,
       },
     });
 
     /* ===============================
-       📧 SEND MAIL (JUST HOT)
+       📧 SEND MAIL (CHỈ 1 LẦN)
     ================================ */
-    if (hasPhone && !wasHot) {
+    if (hasPhone && !conversation.mailSent) {
       await this.mailService.sendLeadMail({
         phone: phone ?? undefined,
         psid,
         conversationId: conversation.id,
+      });
+
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { mailSent: true },
       });
     }
 
@@ -167,13 +184,14 @@ export class ChatService {
     }
 
     const timer = setTimeout(async () => {
-      const finalMessage = this.pendingMessages.get(conversation.id);
+      const finalMessage =
+        this.pendingMessages.get(conversation.id);
       if (!finalMessage) return;
 
       const reply = await this.chat(
         conversation.id,
         finalMessage,
-        status,
+        nextStatus,
       );
 
       await this.prisma.message.create({
@@ -181,7 +199,6 @@ export class ChatService {
           conversationId: conversation.id,
           sender: MessageSender.BOT,
           content: reply,
-          intent: MessageIntent.UNKNOWN,
         },
       });
 
@@ -192,18 +209,17 @@ export class ChatService {
     }, 2500);
 
     this.pendingTimers.set(conversation.id, timer);
-
     return { ok: true };
   }
 
   /* ===============================
-     2️⃣ CORE CHAT LOGIC (AI)
+     2️⃣ CHAT LOGIC (6.2 / 6.3)
   ================================ */
   async chat(
     conversationId: string,
     message: string,
     status: LeadStatus,
-  ): Promise<string> {
+  ) {
     const products = await this.prisma.product.findMany();
 
     const history = await this.prisma.message.findMany({
@@ -212,66 +228,40 @@ export class ChatService {
       take: 10,
     });
 
-    /* ===============================
-       🕒 TIME-BASED STRATEGY (A/B/C)
-    ================================ */
-    const lastUserMsg = [...history]
+    const lastUser = [...history]
       .reverse()
       .find((m) => m.sender === MessageSender.USER);
 
-    let dayDiff = 0;
-    if (lastUserMsg) {
-      dayDiff = this.getDayDiff(
-        new Date(lastUserMsg.createdAt),
-        new Date(),
-      );
-    }
+    const days = lastUser
+      ? this.dayDiff(lastUser.createdAt)
+      : 0;
 
-    let extraRule = '';
+    let strategy = '';
 
-    if (status === LeadStatus.DONE) {
-      if (dayDiff < 1) {
-        extraRule = `
-KHÁCH VỪA MUA.
-- Chỉ hỗ trợ HDSD / bảo quản
-- Không bán thêm
-`;
-      } else if (dayDiff <= 7) {
-        extraRule = `
-KHÁCH ĐÃ MUA GẦN ĐÂY.
-- Tư vấn nhẹ nếu cần
-- Không tạo áp lực mua
-`;
+    if (status === LeadStatus.DONE_SALE) {
+      if (days < 1) {
+        strategy = 'Chỉ hỗ trợ HDSD, KHÔNG bán thêm.';
+      } else if (days <= 7) {
+        strategy = 'Tư vấn nhẹ nếu khách hỏi.';
       } else {
-        extraRule = `
-KHÁCH QUAY LẠI SAU THỜI GIAN DÀI.
-- Có thể gợi ý sản phẩm liên quan
-- Upsell nhẹ, thân thiện
-`;
+        strategy =
+          'Gợi ý sản phẩm liên quan, upsell rất nhẹ.';
       }
     }
 
     const knowledgeBase = `
 Bạn là chatbot bán hàng chuyên nghiệp.
+TRẠNG THÁI: ${status}
+NGÀY KHÔNG NHẮN: ${days}
 
-TRẠNG THÁI KHÁCH: ${status}
-SỐ NGÀY TỪ TIN NHẮN CUỐI: ${dayDiff}
-
-QUY TẮC CHUNG:
-- Không bịa
-- Không suy diễn
-- Không gây áp lực mua
-
-${extraRule}
+${strategy}
 
 DANH SÁCH SẢN PHẨM:
 ${products
   .map(
     (p) => `
-Tên: ${p.name}
-Giá: ${p.price} VND
-Mô tả: ${p.description}
-Freeship: ${p.freeShip ? 'Có' : 'Không'}
+- ${p.name}: ${p.price} VND
+${p.description}
 `,
   )
   .join('\n')}
@@ -288,27 +278,24 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     let reply =
       typeof aiReply === 'string'
         ? aiReply
-        : aiReply?.text ?? 'Shop hỗ trợ anh/chị ngay nhé ạ';
+        : aiReply?.text ?? 'Shop hỗ trợ anh/chị nhé ạ';
 
     if (
       status === LeadStatus.INTEREST &&
       !reply.toLowerCase().includes('số')
     ) {
       reply +=
-        '\n\n👉 Anh/chị để lại số điện thoại để shop tư vấn & chốt đơn nhanh hơn nhé ạ 📞';
+        '\n\n👉 Anh/chị để lại SĐT để shop hỗ trợ nhanh hơn ạ 📞';
     }
 
     if (status === LeadStatus.HOT) {
       reply =
-        'Cảm ơn anh/chị đã để lại số điện thoại 🙏 Nhân viên shop sẽ liên hệ ngay để tư vấn và chốt đơn ạ.';
+        'Cảm ơn anh/chị 🙏 Nhân viên shop sẽ liên hệ ngay ạ.';
     }
 
     return reply;
   }
 
-  /* ===============================
-     3️⃣ SEND TO FACEBOOK
-  ================================ */
   async sendToFacebook(psid: string, text: string) {
     const token = process.env.PAGE_ACCESS_TOKEN;
     if (!token) return;
@@ -323,16 +310,9 @@ Freeship: ${p.freeShip ? 'Có' : 'Không'}
     );
   }
 
-  /* ===============================
-     4️⃣ PHONE EXTRACTOR
-  ================================ */
-  extractPhone(text: string): string | null {
-    const match = text.match(/(0|\+84|84)(\d{8,9})/);
+  extractPhone(text: string) {
+    const match = text.match(/(0|\+84|84)\d{8,9}/);
     if (!match) return null;
-
-    let phone = match[0];
-    if (phone.startsWith('+84')) phone = '0' + phone.slice(3);
-    if (phone.startsWith('84')) phone = '0' + phone.slice(2);
-    return phone;
+    return match[0].replace(/^(\+84|84)/, '0');
   }
 }
