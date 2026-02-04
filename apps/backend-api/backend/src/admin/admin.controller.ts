@@ -6,7 +6,7 @@ import {
   Body,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { LeadStatus } from '@prisma/client';
+import { LeadStatus, MessageSender } from '@prisma/client';
 
 @Controller('admin')
 export class AdminController {
@@ -162,8 +162,7 @@ export class AdminController {
         'vngenmart@gmail.com',
     };
   }
-}
-  
+ 
 /* ===============================
    🔄 10️⃣ REOPEN LEAD (DONE → INTEREST)
 ================================ */
@@ -202,4 +201,5 @@ async saleMessage(
   });
 
   return { ok: true };
+  }
 }

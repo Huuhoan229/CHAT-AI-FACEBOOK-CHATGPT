@@ -84,6 +84,7 @@ enum LeadStatus {
 enum MessageSender {
   USER
   BOT
+  SALE
 }
 
 enum MessageIntent {
