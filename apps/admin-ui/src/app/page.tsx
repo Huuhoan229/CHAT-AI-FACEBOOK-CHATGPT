@@ -2,7 +2,14 @@ import StatCard from '../components/StatCard';
 import { apiGet } from '../lib/api';
 
 export default async function Dashboard() {
-  const stats = await apiGet('/admin/stats');
+  let stats = null;
+
+  try {
+    stats = await apiGet('/admin/stats');
+  } catch (e) {
+    console.error('Stats API error', e);
+  }
+
 
   return (
     <>
