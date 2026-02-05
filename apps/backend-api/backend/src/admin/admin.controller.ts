@@ -124,30 +124,40 @@ export class AdminController {
   /* ===============================
      📊 8️⃣ DASHBOARD STATS
   ================================ */
-    @Get('stats')
+  @Get('stats')
   async getStats() {
-    const [rows] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT status, COUNT(*)::int AS count
-      FROM "Conversation"
-      GROUP BY status
-    `);
+    const total = await this.prisma.conversation.count();
 
-    const map: Record<string, number> = {};
-    rows.forEach(r => {
-      map[r.status] = r.count;
+    const newLead = await this.prisma.conversation.count({
+      where: { status: LeadStatus.NEW },
     });
 
-    const total = Object.values(map).reduce((a, b) => a + b, 0);
+    const interest = await this.prisma.conversation.count({
+      where: { status: LeadStatus.INTEREST },
+    });
+
+    const hot = await this.prisma.conversation.count({
+      where: { status: LeadStatus.HOT },
+    });
+
+    const doneSale = await this.prisma.conversation.count({
+      where: { status: LeadStatus.DONE_SALE },
+    });
+
+    const doneBlock = await this.prisma.conversation.count({
+      where: { status: LeadStatus.DONE_BLOCK },
+    });
 
     return {
       total,
-      new: map.NEW ?? 0,
-      interest: map.INTEREST ?? 0,
-      hot: map.HOT ?? 0,
-      doneSale: map.DONE_SALE ?? 0,
-      doneBlock: map.DONE_BLOCK ?? 0,
+      new: newLead,
+      interest,
+      hot,
+      doneSale,
+      doneBlock,
     };
   }
+
 
 
 
