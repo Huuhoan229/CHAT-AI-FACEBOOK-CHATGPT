@@ -8,6 +8,7 @@
   "scripts": {
     "build": "npx nest build",
     "start": "node dist/main.js",
+    "heroku-postbuild": "echo skip postbuild",
     "start:dev": "npx nest start --watch",
     "start:debug": "npx nest start --debug --watch",
 
