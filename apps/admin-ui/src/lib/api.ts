@@ -38,3 +38,12 @@ export async function apiPatch(path: string, body: any) {
   });
   return handle(res);
 }
+
+export async function apiDelete(url: string) {
+  const res = await fetch(url, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('DELETE failed');
+  return res.json();
+}

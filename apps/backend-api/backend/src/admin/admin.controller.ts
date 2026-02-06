@@ -16,10 +16,6 @@ export class AdminController {
     private readonly chatService: ChatService,
   ) {}
 
-@Controller('admin')
-export class AdminController {
-  constructor(private readonly prisma: PrismaService) {}
-
   /* ===============================
      1️⃣ LIST LEADS
   ================================ */
@@ -54,7 +50,7 @@ export class AdminController {
   }
 
   /* ===============================
-     3️⃣ SALE XỬ LÝ XONG (BOT VẪN TƯ VẤN)
+     3️⃣ DONE SALE
   ================================ */
   @Patch('conversations/:id/done-sale')
   async markDoneSale(@Param('id') id: string) {
@@ -68,7 +64,7 @@ export class AdminController {
   }
 
   /* ===============================
-     4️⃣ CHẶN BOT HOÀN TOÀN
+     4️⃣ BLOCK BOT
   ================================ */
   @Patch('conversations/:id/block-bot')
   async blockBot(@Param('id') id: string) {
@@ -82,7 +78,7 @@ export class AdminController {
   }
 
   /* ===============================
-     5️⃣ TẠM PAUSE BOT
+     5️⃣ PAUSE BOT
   ================================ */
   @Patch('conversations/:id/pause-bot')
   async pauseBot(@Param('id') id: string) {
@@ -102,10 +98,7 @@ export class AdminController {
     });
 
     if (convo?.status === LeadStatus.DONE_BLOCK) {
-      return {
-        ok: false,
-        reason: 'BOT_BLOCKED_PERMANENTLY',
-      };
+      return { ok: false, reason: 'BOT_BLOCKED_PERMANENTLY' };
     }
 
     return this.prisma.conversation.update({
@@ -113,7 +106,6 @@ export class AdminController {
       data: { botPaused: false },
     });
   }
-
 
   /* ===============================
      7️⃣ UPDATE NOTE
@@ -160,113 +152,107 @@ export class AdminController {
     };
   }
 
-
-
-
   /* ===============================
      ⚙️ 9️⃣ EMAIL CONFIG
   ================================ */
   @Get('config/email')
   getEmail() {
     return {
-      email:
-        process.env.LEAD_RECEIVER ||
-        'vngenmart@gmail.com',
+      email: process.env.LEAD_RECEIVER || 'vngenmart@gmail.com',
     };
   }
- 
-/* ===============================
-   🔄 10️⃣ REOPEN LEAD (DONE → INTEREST)
-================================ */
-@Patch('conversations/:id/reopen')
-async reopenLead(@Param('id') id: string) {
-  return this.prisma.conversation.update({
-    where: { id },
-    data: {
-      status: LeadStatus.INTEREST,
-      botPaused: false,
-    },
-  });
-}
 
-@Patch('conversations/:id/sale-message')
-async saleMessage(
-  @Param('id') id: string,
-  @Body('content') raw: string,
-) {
-  if (!raw || !raw.trim()) return { ok: false };
-
-  let content = raw.trim();
-  let botPaused = true;
-
-  // , => resume bot
-  if (content.startsWith(',')) {
-    botPaused = false;
-    content = content.slice(1).trim();
+  /* ===============================
+     🔄 10️⃣ REOPEN LEAD
+  ================================ */
+  @Patch('conversations/:id/reopen')
+  async reopenLead(@Param('id') id: string) {
+    return this.prisma.conversation.update({
+      where: { id },
+      data: {
+        status: LeadStatus.INTEREST,
+        botPaused: false,
+      },
+    });
   }
 
-  // . => pause bot
-  if (content.startsWith('.')) {
-    botPaused = true;
-    content = content.slice(1).trim();
+  /* ===============================
+     💬 11️⃣ SALE MESSAGE
+  ================================ */
+  @Patch('conversations/:id/sale-message')
+  async saleMessage(
+    @Param('id') id: string,
+    @Body('content') raw: string,
+  ) {
+    if (!raw || !raw.trim()) return { ok: false };
+
+    let content = raw.trim();
+    let botPaused = true;
+
+    if (content.startsWith(',')) {
+      botPaused = false;
+      content = content.slice(1).trim();
+    }
+
+    if (content.startsWith('.')) {
+      botPaused = true;
+      content = content.slice(1).trim();
+    }
+
+    await this.prisma.message.create({
+      data: {
+        conversationId: id,
+        sender: MessageSender.SALE,
+        content,
+      },
+    });
+
+    const convo = await this.prisma.conversation.update({
+      where: { id },
+      data: {
+        botPaused,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (convo.psid) {
+      await this.chatService.sendToFacebook(convo.psid, content);
+    }
+
+    return { ok: true, botPaused };
   }
 
-  // 1️⃣ Lưu message SALE (luôn lưu để AI có context)
-  await this.prisma.message.create({
-    data: {
-      conversationId: id,
-      sender: MessageSender.SALE,
-      content,
-    },
-  });
-
-  // 2️⃣ Update trạng thái bot
-  const convo = await this.prisma.conversation.update({
-    where: { id },
-    data: {
-      botPaused,
-      updatedAt: new Date(),
-    },
-  });
-
-  // 3️⃣ Gửi message cho khách qua Facebook
-  if (convo.psid) {
-    await this.chatService.sendToFacebook(
-      convo.psid,
-      content,
-    );
+  /* ===============================
+     🔥 HOT LEADS
+  ================================ */
+  @Get('stats/hot')
+  async getHotLeads() {
+    return this.prisma.conversation.findMany({
+      where: { status: LeadStatus.HOT },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        customerName: true,
+        updatedAt: true,
+      },
+    });
   }
 
-  return {
-    ok: true,
-    botPaused,
-  };
-}
-
-@Get('stats/hot')
-async getHotLeads() {
-  return this.prisma.conversation.findMany({
-    where: { status: LeadStatus.HOT },
-    orderBy: { updatedAt: 'desc' },
-    take: 5,
-    select: {
-      id: true,
-      customerName: true,
-      updatedAt: true,
-    },
-  });
-}
-
-@Get('stats/new')
-async getNewLeads() {
-  return this.prisma.conversation.findMany({
-    where: { status: LeadStatus.NEW },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-    select: {
-      id: true,
-      customerName: true,
-      createdAt: true,
-    },
-  });
+  /* ===============================
+     🆕 NEW LEADS
+  ================================ */
+  @Get('stats/new')
+  async getNewLeads() {
+    return this.prisma.conversation.findMany({
+      where: { status: LeadStatus.NEW },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        customerName: true,
+        createdAt: true,
+      },
+    });
+  }
 }
