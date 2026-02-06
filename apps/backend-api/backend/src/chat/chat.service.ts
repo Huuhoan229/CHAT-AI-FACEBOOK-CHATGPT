@@ -33,19 +33,19 @@ export class ChatService {
   /* ===============================
      1️⃣ FACEBOOK WEBHOOK
   ================================ */
-  async handleWebhook(payload: any) {
+    async handleWebhook(payload: any) {
     const messaging = payload.entry?.[0]?.messaging?.[0];
     if (!messaging || messaging.message?.is_echo) {
       return { ok: true };
     }
 
     const psid = messaging.sender?.id;
-    const text = messaging.message?.text;
+    const rawText = messaging.message?.text?.trim();
     const externalId = messaging.message?.mid;
-    if (!psid || !text) return { ok: true };
+    if (!psid || !rawText) return { ok: true };
 
     /* ===============================
-       ❌ CHẶN DUP FACEBOOK
+      ❌ CHẶN DUP FACEBOOK
     ================================ */
     if (externalId) {
       const existed = await this.prisma.message.findUnique({
@@ -55,7 +55,18 @@ export class ChatService {
     }
 
     /* ===============================
-       🔹 CONVERSATION
+      🔹 SALE COMMAND
+    ================================ */
+    const isSalePause = rawText.startsWith('.');
+    const isSaleResume = rawText.startsWith(',');
+
+    const cleanText =
+      isSalePause || isSaleResume
+        ? rawText.slice(1).trim()
+        : rawText;
+
+    /* ===============================
+      🔹 CONVERSATION
     ================================ */
     let conversation = await this.prisma.conversation.findUnique({
       where: { psid },
@@ -73,45 +84,34 @@ export class ChatService {
     }
 
     /* ===============================
-       🔁 AUTO RESUME BOT (5.3)
-    ================================ */
-    if (conversation.botPaused) {
-      const lastSaleMsg = await this.prisma.message.findFirst({
-        where: {
-          conversationId: conversation.id,
-          sender: MessageSender.SALE,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (lastSaleMsg) {
-        const minutes =
-          (Date.now() - lastSaleMsg.createdAt.getTime()) /
-          60000;
-
-        if (minutes < 10) {
-          return { ok: true };
-        }
-
-        await this.prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { botPaused: false },
-        });
-      }
-    }
-
-    /* ===============================
-       🚫 BLOCK BOT HOÀN TOÀN
+      ⛔ BLOCK BOT HOÀN TOÀN
     ================================ */
     if (conversation.status === LeadStatus.DONE_BLOCK) {
       return { ok: true };
     }
 
     /* ===============================
-       🔹 INTENT + PHONE
+      🔹 PAUSE / RESUME BOT (SALE)
     ================================ */
-    const intent = detectIntent(text);
-    const phone = this.extractPhone(text);
+    if (isSalePause) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { botPaused: true },
+      });
+    }
+
+    if (isSaleResume) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { botPaused: false },
+      });
+    }
+
+    /* ===============================
+      🔹 INTENT + PHONE
+    ================================ */
+    const intent = detectIntent(cleanText);
+    const phone = this.extractPhone(cleanText);
     const hasPhone = Boolean(phone);
 
     let nextStatus = conversation.status;
@@ -123,39 +123,42 @@ export class ChatService {
       intent === MessageIntent.ASK_PRODUCT ||
       intent === MessageIntent.ASK_SHIP
     ) {
-      // ❗ DONE_SALE KHÔNG BỊ ĐẨY NGƯỢC
       if (conversation.status !== LeadStatus.DONE_SALE) {
         nextStatus = LeadStatus.INTEREST;
       }
     }
 
     /* ===============================
-       🔹 UPDATE CONVERSATION
+      🔹 UPDATE CONVERSATION
     ================================ */
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         phone: phone ?? undefined,
         status: nextStatus,
-        lastMessage: text,
+        lastMessage: cleanText,
+        updatedAt: new Date(),
       },
     });
 
     /* ===============================
-       🔹 SAVE USER MESSAGE
+      🔹 SAVE MESSAGE (SALE + USER)
     ================================ */
     await this.prisma.message.create({
       data: {
         conversationId: conversation.id,
-        sender: MessageSender.USER,
-        content: text,
+        sender:
+          isSalePause || isSaleResume
+            ? MessageSender.SALE
+            : MessageSender.USER,
+        content: cleanText,
         intent,
         externalId,
       },
     });
 
     /* ===============================
-       📧 SEND MAIL (CHỈ 1 LẦN)
+      📧 SEND MAIL (1 LẦN)
     ================================ */
     if (hasPhone && !conversation.mailSent) {
       await this.mailService.sendLeadMail({
@@ -171,12 +174,19 @@ export class ChatService {
     }
 
     /* ===============================
-       🔁 GOM MESSAGE + DELAY AI
+      ⛔ KHÔNG REPLY KHI BOT PAUSE
+    ================================ */
+    if (conversation.botPaused || isSalePause) {
+      return { ok: true };
+    }
+
+    /* ===============================
+      🔁 GOM MESSAGE + DELAY AI
     ================================ */
     const prev = this.pendingMessages.get(conversation.id) || '';
     this.pendingMessages.set(
       conversation.id,
-      prev ? prev + '\n' + text : text,
+      prev ? prev + '\n' + cleanText : cleanText,
     );
 
     if (this.pendingTimers.has(conversation.id)) {
@@ -209,8 +219,10 @@ export class ChatService {
     }, 2500);
 
     this.pendingTimers.set(conversation.id, timer);
+
     return { ok: true };
   }
+
 
   /* ===============================
      2️⃣ CHAT LOGIC (6.2 / 6.3)

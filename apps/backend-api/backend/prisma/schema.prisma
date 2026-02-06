@@ -95,3 +95,54 @@ enum MessageIntent {
   CHITCHAT
   UNKNOWN
 }
+
+/// ===============================
+/// AI CONFIG – Provider / Model
+/// ===============================
+model AiConfig {
+  id           String   @id @default(uuid())
+  provider     String   // gemini | openai | claude
+  apiKey       String
+  model        String
+  temperature  Float    @default(0.7)
+  maxTokens    Int      @default(1024)
+  isActive     Boolean  @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// ===============================
+/// AI RULE – Điều khiển hành vi bot
+/// ===============================
+model AiRule {
+  id                 String   @id @default(uuid())
+
+  systemPrompt       String   // prompt gốc cho AI
+  tone               String   // sales | support | polite
+
+  askPhone           Boolean  @default(true)
+  allowUpsell        Boolean  @default(true)
+  allowAfterDoneSale Boolean  @default(false)
+
+  pauseKeyword       String   @default(".")
+  resumeKeyword      String   @default(",")
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// ===============================
+/// AI TRAINING – Knowledge / Q&A
+/// ===============================
+model AiTraining {
+  id          String   @id @default(uuid())
+
+  title       String
+  content     String
+  priority    Int      @default(1)
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+}
+

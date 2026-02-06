@@ -1,9 +1,17 @@
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
 import LeadStatusBadge from '../../components/LeadStatusBadge';
 import { apiGet } from '../../lib/api';
 
 export default async function LeadsPage() {
-  const leads = await apiGet('/admin/conversations');
+  let leads: any[] = [];
+
+  try {
+    leads = await apiGet('/admin/conversations');
+  } catch (e) {
+    console.error('Leads API error', e);
+  }
 
   return (
     <>
@@ -22,6 +30,17 @@ export default async function LeadsPage() {
           </thead>
 
           <tbody>
+            {leads.length === 0 && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="p-6 text-center text-gray-500"
+                >
+                  No leads found
+                </td>
+              </tr>
+            )}
+
             {leads.map((lead: any) => (
               <tr
                 key={lead.id}
@@ -29,7 +48,9 @@ export default async function LeadsPage() {
               >
                 <td className="p-3">
                   <div className="font-medium">
-                    {lead.sale?.name || 'Facebook User'}
+                    {lead.customerName ||
+                      lead.psid ||
+                      'Facebook User'}
                   </div>
                 </td>
 
@@ -42,7 +63,9 @@ export default async function LeadsPage() {
                 </td>
 
                 <td>
-                  {new Date(lead.updatedAt).toLocaleString()}
+                  {lead.updatedAt
+                    ? new Date(lead.updatedAt).toLocaleString()
+                    : '-'}
                 </td>
 
                 <td className="text-right pr-4">

@@ -7,6 +7,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus, MessageSender } from '@prisma/client';
+import { ChatService } from '../chat/chat.service';
+
+@Controller('admin')
+export class AdminController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chatService: ChatService,
+  ) {}
 
 @Controller('admin')
 export class AdminController {
@@ -184,9 +192,26 @@ async reopenLead(@Param('id') id: string) {
 @Patch('conversations/:id/sale-message')
 async saleMessage(
   @Param('id') id: string,
-  @Body('content') content: string,
+  @Body('content') raw: string,
 ) {
-  // 1️⃣ Lưu tin nhắn SALE
+  if (!raw || !raw.trim()) return { ok: false };
+
+  let content = raw.trim();
+  let botPaused = true;
+
+  // , => resume bot
+  if (content.startsWith(',')) {
+    botPaused = false;
+    content = content.slice(1).trim();
+  }
+
+  // . => pause bot
+  if (content.startsWith('.')) {
+    botPaused = true;
+    content = content.slice(1).trim();
+  }
+
+  // 1️⃣ Lưu message SALE (luôn lưu để AI có context)
   await this.prisma.message.create({
     data: {
       conversationId: id,
@@ -195,15 +220,53 @@ async saleMessage(
     },
   });
 
-  // 2️⃣ Pause bot ngay lập tức
-  await this.prisma.conversation.update({
+  // 2️⃣ Update trạng thái bot
+  const convo = await this.prisma.conversation.update({
     where: { id },
     data: {
-      botPaused: true,
+      botPaused,
       updatedAt: new Date(),
     },
   });
 
-  return { ok: true };
+  // 3️⃣ Gửi message cho khách qua Facebook
+  if (convo.psid) {
+    await this.chatService.sendToFacebook(
+      convo.psid,
+      content,
+    );
   }
+
+  return {
+    ok: true,
+    botPaused,
+  };
+}
+
+@Get('stats/hot')
+async getHotLeads() {
+  return this.prisma.conversation.findMany({
+    where: { status: LeadStatus.HOT },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+    select: {
+      id: true,
+      customerName: true,
+      updatedAt: true,
+    },
+  });
+}
+
+@Get('stats/new')
+async getNewLeads() {
+  return this.prisma.conversation.findMany({
+    where: { status: LeadStatus.NEW },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    select: {
+      id: true,
+      customerName: true,
+      createdAt: true,
+    },
+  });
 }
