@@ -35,7 +35,7 @@ export default function LeadDetailPage({
      ACTIONS
   ================================ */
   async function action(url: string) {
-    await apiPatch(url);
+    await apiPatch(url, {});
     const fresh = await apiGet(
       `/admin/conversations/${params.id}`,
     );
