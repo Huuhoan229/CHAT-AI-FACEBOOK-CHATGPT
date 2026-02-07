@@ -1,54 +1,63 @@
-'use client';
+export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { apiGet, apiPatch, apiDelete } from '../../../lib/api';
+import { apiGet, apiPatch } from '../../../lib/api';
 
-export default function ProductDetail({ params }) {
-  const router = useRouter();
-  const [p, setP] = useState(null);
+export default async function ProductDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  let p: any = null;
 
-  useEffect(() => {
-    apiGet(`/products/${params.id}`).then(setP);
-  }, []);
-
-  if (!p) return null;
-
-  async function save() {
-    await apiPatch(`/products/${p.id}`, p);
-    alert('Saved');
+  try {
+    p = await apiGet(`/products/${params.id}`);
+  } catch (e) {
+    console.error('Load product error', e);
   }
 
-  async function remove() {
-    if (!confirm('Delete product?')) return;
-    await apiDelete(`/products/${p.id}`);
-    router.push('/products');
+  // ✅ GUARD – bắt buộc
+  if (!p) {
+    return (
+      <div className="text-red-500">
+        Không tải được sản phẩm
+      </div>
+    );
+  }
+
+  async function save() {
+    'use server';
+    await apiPatch(`/products/${p.id}`, p);
   }
 
   return (
     <>
-      <h1 className="text-2xl font-bold mb-4">Edit Product</h1>
+      <h1 className="text-2xl font-bold mb-4">
+        Edit Product
+      </h1>
 
-      <div className="space-y-3 max-w-xl">
-        <input className="input" value={p.name}
-          onChange={(e) => setP({ ...p, name: e.target.value })} />
-
-        <input className="input" value={p.price}
-          onChange={(e) => setP({ ...p, price: Number(e.target.value) })} />
-
-        <textarea className="input h-24" value={p.description}
-          onChange={(e) => setP({ ...p, description: e.target.value })} />
-
-        <label className="flex gap-2">
-          <input type="checkbox" checked={p.freeShip}
-            onChange={(e) => setP({ ...p, freeShip: e.target.checked })} />
-          Free ship
-        </label>
-
-        <div className="flex gap-2">
-          <button onClick={save} className="btn btn-green">Save</button>
-          <button onClick={remove} className="btn btn-red">Delete</button>
+      <div className="bg-white p-4 rounded shadow space-y-3">
+        <div>
+          <label className="block text-sm">Name</label>
+          <input
+            defaultValue={p.name}
+            className="border rounded w-full px-2 py-1"
+          />
         </div>
+
+        <div>
+          <label className="block text-sm">Price</label>
+          <input
+            defaultValue={p.price}
+            className="border rounded w-full px-2 py-1"
+          />
+        </div>
+
+        <button
+          onClick={save}
+          className="btn btn-blue"
+        >
+          Save
+        </button>
       </div>
     </>
   );

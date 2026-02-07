@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import LeadStatusBadge from '../../components/LeadStatusBadge';
-import { apiGet } from '../../lib/api';
+import LeadStatusBadge from './LeadStatusBadge';
+import { apiGet } from '../lib/api';
 
 export default async function LeadsPage() {
   let leads: any[] = [];

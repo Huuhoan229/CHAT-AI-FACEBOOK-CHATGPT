@@ -2,9 +2,16 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { apiGet, apiDelete } from '../../lib/api';
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+};
+
 
 export default async function ProductsPage() {
-  const products = await apiGet('/products');
+  const products: Product [] = await apiGet('/products');
 
   return (
     <>
@@ -25,23 +32,23 @@ export default async function ProductsPage() {
           </tr>
         </thead>
 
-        <tbody>
-          {products.map((p) => (
-            <tr key={p.id} className="border-t">
-              <td className="p-2">{p.name}</td>
-              <td>{p.price.toLocaleString()} đ</td>
-              <td>{p.freeShip ? '✅' : '❌'}</td>
-              <td className="text-right pr-3">
-                <Link
-                  href={`/products/${p.id}`}
-                  className="text-blue-600 hover:underline mr-3"
-                >
-                  Edit
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
+      <tbody>
+        {products.map((p: Product) => (
+          <tr key={p.id} className="border-t">
+            <td className="p-2">{p.name}</td>
+            <td>{p.price.toLocaleString()} đ</td>
+            <td className="text-right">
+              <a
+                href={`/products/${p.id}`}
+                className="text-blue-600 hover:underline"
+              >
+                Edit
+              </a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+
       </table>
     </>
   );
