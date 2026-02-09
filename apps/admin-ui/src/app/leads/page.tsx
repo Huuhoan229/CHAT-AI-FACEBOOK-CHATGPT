@@ -22,6 +22,11 @@ export default async function LeadsPage() {
           </thead>
 
           <tbody>
+            {leads.length === 0 && (
+              <div className="text-gray-500 p-4">
+                No leads found
+              </div>
+            )}
             {leads.map((lead: any) => (
               <tr
                 key={lead.id}

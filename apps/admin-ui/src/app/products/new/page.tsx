@@ -1,54 +1,54 @@
-'use client';
-
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { redirect } from 'next/navigation';
 import { apiPost } from '../../../lib/api';
 
-export default function NewProduct() {
-  const router = useRouter();
-  const [form, setForm] = useState({
-    name: '',
-    price: '',
-    description: '',
-    freeShip: false,
-    coverImage: '',
-  });
+export default function NewProductPage() {
+  async function create(formData: FormData) {
+    'use server';
 
-  async function submit() {
     await apiPost('/products', {
-      ...form,
-      price: Number(form.price),
+      name: formData.get('name'),
+      price: Number(formData.get('price')),
+      description: formData.get('description'),
     });
-    router.push('/products');
+
+    redirect('/products');
   }
 
   return (
     <>
-      <h1 className="text-2xl font-bold mb-4">New Product</h1>
+      <h1 className="text-2xl font-bold mb-6">
+        New Product
+      </h1>
 
-      <div className="space-y-3 max-w-xl">
-        <input placeholder="Name" className="input"
-          onChange={(e) => setForm({ ...form, name: e.target.value })} />
+      <form
+        action={create}
+        className="bg-white rounded shadow p-6 space-y-4 max-w-lg"
+      >
+        <input
+          name="name"
+          placeholder="Product name"
+          className="input"
+          required
+        />
 
-        <input placeholder="Price" className="input"
-          onChange={(e) => setForm({ ...form, price: e.target.value })} />
+        <input
+          name="price"
+          type="number"
+          placeholder="Price"
+          className="input"
+          required
+        />
 
-        <textarea placeholder="Description" className="input h-24"
-          onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <textarea
+          name="description"
+          placeholder="Description"
+          className="input h-28"
+        />
 
-        <input placeholder="Cover image URL" className="input"
-          onChange={(e) => setForm({ ...form, coverImage: e.target.value })} />
-
-        <label className="flex items-center gap-2">
-          <input type="checkbox"
-            onChange={(e) => setForm({ ...form, freeShip: e.target.checked })} />
-          Free ship
-        </label>
-
-        <button onClick={submit} className="btn btn-green">
-          Save
+        <button className="btn btn-blue">
+          Create
         </button>
-      </div>
+      </form>
     </>
   );
 }

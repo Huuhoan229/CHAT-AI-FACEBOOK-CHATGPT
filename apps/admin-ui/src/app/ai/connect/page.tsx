@@ -1,35 +1,46 @@
 export const dynamic = 'force-dynamic';
 
-export default function AIConnect() {
+import { apiGet, apiPatch } from '../../../lib/api';
+
+export default async function AiConnectPage() {
+  const config = await apiGet('/admin/config/bot').catch(
+    () => ({ enabled: true }),
+  );
+
+  async function toggle() {
+    'use server';
+    await apiPatch('/admin/config/bot', {
+      enabled: !config.enabled,
+    });
+  }
+
   return (
     <>
-      <h1 className="text-xl font-bold mb-4">AI Connection</h1>
+      <h1 className="text-2xl font-bold mb-6">
+        AI Connect
+      </h1>
 
-      <div className="bg-white p-4 rounded shadow space-y-4">
-        <div>
-          <label className="block font-semibold mb-1">
-            AI Provider
-          </label>
-          <select className="border rounded px-3 py-2 w-full">
-            <option>OpenAI</option>
-            <option>Gemini</option>
-          </select>
-        </div>
+      <div className="bg-white p-6 rounded shadow max-w-md">
+        <p className="mb-4">
+          Bot status:{' '}
+          <b
+            className={
+              config.enabled
+                ? 'text-green-600'
+                : 'text-red-600'
+            }
+          >
+            {config.enabled ? 'ACTIVE' : 'DISABLED'}
+          </b>
+        </p>
 
-        <div>
-          <label className="block font-semibold mb-1">
-            API Key
-          </label>
-          <input
-            type="password"
-            placeholder="sk-xxxx"
-            className="border rounded px-3 py-2 w-full"
-          />
-        </div>
-
-        <button className="btn btn-blue">
-          Save Connection
-        </button>
+        <form action={toggle}>
+          <button className="btn btn-blue">
+            {config.enabled
+              ? 'Disable Bot'
+              : 'Enable Bot'}
+          </button>
+        </form>
       </div>
     </>
   );

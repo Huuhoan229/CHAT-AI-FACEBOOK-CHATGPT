@@ -1,64 +1,75 @@
-export const dynamic = 'force-dynamic';
-
+import { redirect } from 'next/navigation';
 import { apiGet, apiPatch } from '../../../lib/api';
+
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+};
 
 export default async function ProductDetailPage({
   params,
 }: {
   params: { id: string };
 }) {
-  let p: any = null;
+  const product: Product | null = await apiGet(
+    `/products/${params.id}`,
+  ).catch(() => null);
 
-  try {
-    p = await apiGet(`/products/${params.id}`);
-  } catch (e) {
-    console.error('Load product error', e);
-  }
-
-  // ✅ GUARD – bắt buộc
-  if (!p) {
+  if (!product) {
     return (
       <div className="text-red-500">
-        Không tải được sản phẩm
+        Product not found
       </div>
     );
   }
 
-  async function save() {
+  async function save(formData: FormData) {
     'use server';
-    await apiPatch(`/products/${p.id}`, p);
+
+    await apiPatch(`/products/${params.id}`, {
+      name: formData.get('name'),
+      price: Number(formData.get('price')),
+      description: formData.get('description'),
+    });
+
+    redirect('/products');
   }
 
   return (
     <>
-      <h1 className="text-2xl font-bold mb-4">
+      <h1 className="text-2xl font-bold mb-6">
         Edit Product
       </h1>
 
-      <div className="bg-white p-4 rounded shadow space-y-3">
-        <div>
-          <label className="block text-sm">Name</label>
-          <input
-            defaultValue={p.name}
-            className="border rounded w-full px-2 py-1"
-          />
-        </div>
+      <form
+        action={save}
+        className="bg-white rounded shadow p-6 space-y-4 max-w-lg"
+      >
+        <input
+          name="name"
+          defaultValue={product.name}
+          className="input"
+        />
 
-        <div>
-          <label className="block text-sm">Price</label>
-          <input
-            defaultValue={p.price}
-            className="border rounded w-full px-2 py-1"
-          />
-        </div>
+        <input
+          name="price"
+          type="number"
+          defaultValue={product.price}
+          className="input"
+        />
 
-        <button
-          onClick={save}
-          className="btn btn-blue"
-        >
+        <textarea
+          name="description"
+          defaultValue={product.description}
+          className="input h-28"
+        />
+
+        <button className="btn btn-blue">
           Save
         </button>
-      </div>
+      </form>
     </>
   );
 }

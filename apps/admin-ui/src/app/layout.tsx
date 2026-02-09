@@ -1,5 +1,6 @@
 import './globals.css';
 import Sidebar from '../components/Sidebar';
+import Breadcrumb from '../components/Breadcrumb';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,11 @@ export default function RootLayout({
       <body className="bg-gray-100">
         <div className="flex min-h-screen">
           <Sidebar />
-          <main className="flex-1 p-6">{children}</main>
+
+          <main className="flex-1 p-6">
+            <Breadcrumb />
+            {children}
+          </main>
         </div>
       </body>
     </html>

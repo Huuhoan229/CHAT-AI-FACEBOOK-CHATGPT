@@ -1,36 +1,40 @@
 export const dynamic = 'force-dynamic';
 
-export default function AIRule() {
+import { apiGet, apiPatch } from '../../../lib/api';
+
+export default async function AiRulePage() {
+  const data = await apiGet('/admin/config/ai-rule').catch(
+    () => ({ rule: '' }),
+  );
+
+  async function save(formData: FormData) {
+    'use server';
+    await apiPatch('/admin/config/ai-rule', {
+      rule: formData.get('rule'),
+    });
+  }
+
   return (
     <>
-      <h1 className="text-xl font-bold mb-4">AI Rules</h1>
+      <h1 className="text-2xl font-bold mb-6">
+        AI Rule
+      </h1>
 
-      <div className="bg-white p-4 rounded shadow space-y-4">
-        <label className="block font-semibold">
-          Prompt gốc (System Prompt)
-        </label>
-
+      <form
+        action={save}
+        className="bg-white p-6 rounded shadow max-w-2xl space-y-4"
+      >
         <textarea
-          rows={6}
-          className="w-full border rounded p-2"
-          defaultValue={`Bạn là nhân viên sale chuyên nghiệp.
-Luôn trả lời lịch sự, ngắn gọn, tập trung chốt đơn.`}
+          name="rule"
+          defaultValue={data.rule}
+          placeholder="Ví dụ: Không chốt đơn, chỉ xin SĐT..."
+          className="w-full h-48 border rounded p-3 text-sm"
         />
 
-        <div className="flex items-center gap-2">
-          <input type="checkbox" defaultChecked />
-          <span>Tự động pause bot khi sale nhắn</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input type="checkbox" defaultChecked />
-          <span>Không trả lời nếu status = DONE_BLOCK</span>
-        </div>
-
-        <button className="btn btn-green">
-          Save Rules
+        <button className="btn btn-blue">
+          Save Rule
         </button>
-      </div>
+      </form>
     </>
   );
 }

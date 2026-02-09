@@ -1,21 +1,40 @@
 export const dynamic = 'force-dynamic';
 
-export default function AITraining() {
+import { apiGet, apiPatch } from '../../../lib/api';
+
+export default async function AiTrainingPage() {
+  const data = await apiGet('/admin/config/ai-training').catch(
+    () => ({ content: '' }),
+  );
+
+  async function save(formData: FormData) {
+    'use server';
+    await apiPatch('/admin/config/ai-training', {
+      content: formData.get('content'),
+    });
+  }
+
   return (
     <>
-      <h1 className="text-xl font-bold mb-4">AI Training</h1>
+      <h1 className="text-2xl font-bold mb-6">
+        AI Training
+      </h1>
 
-      <div className="bg-white p-4 rounded shadow space-y-4">
-        <p className="text-sm text-gray-600">
-          Upload dữ liệu training (FAQ, kịch bản bán hàng, file text)
-        </p>
-
-        <input type="file" />
+      <form
+        action={save}
+        className="bg-white p-6 rounded shadow max-w-2xl space-y-4"
+      >
+        <textarea
+          name="content"
+          defaultValue={data.content}
+          placeholder="Nhập kiến thức sản phẩm, phong cách tư vấn..."
+          className="w-full h-64 border rounded p-3 text-sm"
+        />
 
         <button className="btn btn-blue">
-          Upload & Train
+          Save Training Data
         </button>
-      </div>
+      </form>
     </>
   );
 }
